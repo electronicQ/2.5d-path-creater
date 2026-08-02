@@ -1,0 +1,24 @@
+<launch>
+
+  <!-- Launch the grid map filters demo node. -->
+  <node pkg="grid_map_demos" type="filters_demo" name="grid_map_filter_demo" output="screen">
+    <!-- Input topic -->
+  	<param name="input_topic" value="/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud" />
+  	<!-- Output topic -->
+  	<param name="output_topic" value="filtered_map" />
+  	<!-- Load grid map filter chain configuration -->
+    <rosparam command="load" file="$(find grid_map_demos)/config/filters_demo_filter_chain_gai.yaml" />
+  </node>
+
+
+  <!-- Load the general parameters (except for filter chain) for this demo. -->
+  <rosparam command="load" file="$(find grid_map_demos)/config/filters_demo_gai.yaml" />
+
+
+  <!-- Launch the grid map visualizer. -->
+  <node pkg="grid_map_visualization" type="grid_map_visualization" name="grid_map_visualization" output="screen" />
+
+
+  <!-- Launch RViz with the demo configuration. -->
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find grid_map_demos)/rviz/filters_demo.rviz" />
+</launch>

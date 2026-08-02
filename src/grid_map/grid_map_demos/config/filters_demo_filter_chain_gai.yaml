@@ -1,0 +1,227 @@
+grid_map_filters:
+    #（1）这个层没有意义
+  # - name: first
+  #   type: gridMapFilters/MockFilter
+  #   params:
+  #     processing_time: 100
+  #     print_name: true
+
+    #（2）保证内部 buffer / layer 统一管理
+  - name: buffer_normalizer
+    type: gridMapFilters/BufferNormalizerFilter
+
+  # # Duplicate layer.
+  # - name: duplicate
+  #   type: gridMapFilters/DuplicationFilter
+  #   params:
+  #     input_layer: ...
+  #     output_layer: ...
+
+  # （3）删除原始颜色层，我们不需要这个原始颜色层，rviz中的显示也不是使用的这个颜色层，而是使用Color Map对层数据映射的。
+    # type: gridMapFilters/DeletionFilter
+    # params:
+    #   layers: [color] # List of layers.
+
+  # # （4）高程补洞 Fill holes in the map with inpainting.
+  # - name: inpaint
+  #   type: gridMapFilters/MedianFillFilter
+  #   params:
+  #     input_layer: elevation
+  #     output_layer: elevation_inpainted
+  #     fill_hole_radius: 0.6            # 搜索半径稍微给大一点，比如0.4或0.5，确保能跨越扫描线的间距
+  #     filter_existing_values: false    # 核心：只填空洞，不去破坏原本就有的真实雷达高程
+  #     num_erode_dilation_iterations: 2
+  #     fill_mask_layer: elevation
+
+  # # （4）高程补洞 Fill holes in the map with sliding window median.
+  # # 放弃 MedianFillFilter，使用不受 Mask 限制的滑动窗口中值滤波器来强行补洞
+  # - name: inpaint
+  #   type: gridMapFilters/SlidingWindowMathExpressionFilter
+  #   params:
+  #     input_layer: elevation
+  #     output_layer: elevation_inpainted
+  #     # 计算窗口内有效数值的中值
+  #     expression: medianOfFinites(elevation) 
+  #     # 极其关键：必须为 True。只在中心栅格为空洞 (NaN) 的时候才进行计算填充
+  #     compute_empty_cells: true       
+  #     # 边界处理：遇到地图边缘就裁剪窗口
+  #     edge_handling: crop             
+  #     # 窗口长度：0.6m 在 0.2m 分辨率下是一个 3x3 的矩阵，足够填平离散的雷达扫描间隙
+  #     window_length: 0.6
+
+  # # （4）高程补洞 Fill holes using a simple Mean in Radius fallback
+  # # 使用最基础的均值滤波器，绝对兼容所有 grid_map 版本
+  # - name: inpaint
+  #   type: gridMapFilters/MeanInRadiusFilter
+  #   params:
+  #     input_layer: elevation
+  #     output_layer: elevation_inpainted
+  #     radius: 1.5  # 搜索半径，0.6m 足够填平雷达盲区的缝隙
+
+  # # --- (4.1) 凭空捏造一个“全地图掩码” ---
+  # # 为后面的补洞算法提供计算范围许可
+  # - name: create_global_mask
+  #   type: gridMapFilters/MathExpressionFilter
+  #   params:
+  #     input_layer: elevation
+  #     output_layer: global_mask
+  #     expression: "1.0"
+  #     compute_empty_cells: true  # 核心！即使是空洞处，也要生成 1.0，告诉算法"这里可以操作"
+
+  # # --- (4.2) 严格无损补洞：只填洞，绝不动原数据 ---
+  # - name: strict_inpaint
+  #   type: gridMapFilters/MedianFillFilter
+  #   params:
+  #     input_layer: elevation
+  #     output_layer: elevation_inpainted
+  #     fill_mask_layer: global_mask     # 填入刚刚捏造的掩码层（不再报错）
+  #     filter_existing_values: false    # 🌟 绝对核心：设置为 false，誓死保护已有雷达数据！
+  #     fill_hole_radius: 1.0            # 最大填补半径
+  #     num_erode_dilation_iterations: 1 # 满足底层 C++ 要求的参数
+
+
+
+  
+
+  # （5）高程平滑 Reduce noise with a radial blurring filter.高程平滑是用来计算粗糙度的。
+  - name: mean_in_radius
+    type: gridMapFilters/MeanInRadiusFilter
+    params:
+      input_layer: elevation
+      output_layer: elevation_smooth
+      radius: 1.0
+
+  # Boxblur as an alternative to the inpaint and radial blurring filter above.
+  # - name: boxblur
+  #   type: gridMapFilters/SlidingWindowMathExpressionFilter
+  #   params:
+  #     input_layer: elevation
+  #     output_layer: elevation_smooth
+  #     expression: meanOfFinites(elevation)
+  #     compute_empty_cells: true
+  #     edge_handling: crop # options: inside, crop, empty, mean
+  #     window_size: 5 # optional
+
+  # （6）计算地表法向量 Compute surface normals.
+  - name: surface_normals
+    type: gridMapFilters/NormalVectorsFilter
+    params:
+      input_layer: elevation_smooth  # <--- 【极其关键】必须改为 smooth！不能用 inpainted（使用inpainted看看效果）
+      output_layers_prefix: normal_vectors_
+      radius: 1.0  # <--- 收缩到 0.6，既能跨越残余波纹，又能保住台阶边缘，原来1.0
+      normal_vector_positive_axis: z
+
+  # （7）用于将法向量转换为RGB，仅用于可视化，对算法无影响。Add a color layer for visualization based on the surface normal.
+  - name: normal_color_map
+    type: gridMapFilters/NormalColorMapFilter
+    params:
+      input_layers_prefix: normal_vectors_
+      output_layer: normal_color
+
+
+  #*********上述的层更多的是为下面的层提供计算基础，下面的层才是重要的。整合后主要就用两个：edge_detection + traversability ************
+  # 重点层（1）：坡度：Compute slope from surface normal.
+  - name: slope
+    type: gridMapFilters/MathExpressionFilter
+    params:
+      output_layer: slope
+      expression: acos(normal_vectors_z)
+
+  - name: slope_deadzone
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: slope
+      output_layer: slope      
+      lower_threshold: 0.08    
+      set_to: 0.0
+
+ 
+  # 重点层（2）：粗糙度：Compute roughness as absolute difference from map to smoothened map.
+  - name: roughness
+    type: gridMapFilters/MathExpressionFilter
+    params:
+      output_layer: roughness
+      expression: abs(elevation - elevation_smooth)
+
+
+  # 3. 【修改：死区截断层（去底噪）】
+  # 使用原生的阈值滤波器：将低于 0.04 的波纹强行归零
+  - name: roughness_deadzone
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: roughness
+      output_layer: roughness  # 原地修改，不再创建新图层
+      lower_threshold: 0.05
+      set_to: 0.0
+
+  # 重点层（3）：边缘/突变（检测坡度变化剧烈的位置，窗口内slope的标准差，也就是这个0.3m窗口里，坡度变化有多剧烈）
+  - name: edge_detection
+    type: gridMapFilters/SlidingWindowMathExpressionFilter
+    params:
+      input_layer: slope
+      output_layer: edges
+      expression: sqrt(sumOfFinites(square(slope - meanOfFinites(slope))) ./ numberOfFinites(slope)) # Standard deviation
+      compute_empty_cells: false
+      edge_handling: crop # options: inside, crop, empty, mean
+      window_length: 1.5  # <--- 修改这里！0.7米可以保证在0.2的分辨率下框住 3x3 到 4x4 的格子
+
+  # 【新增】：边缘死区层
+  - name: edges_deadzone
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: edges
+      output_layer: edges      # 原地修改 edges 层
+      lower_threshold: 0.08    # <--- 如果边缘突变强度低于 0.08，说明只是个小坎，直接归零
+      set_to: 0.0
+
+
+  # 重点层（4）：可通行性。根据坡度和粗糙度求解的，slope和roughness都是越小越好，所以都使用了都是1-，可通行性是越大越好
+  # slope坡度的范围是0-1.57：坡度在 0->0.52（0->30度）之间时，贡献的逐渐降低，等于0.52（30度）了就没贡献了，当大于0.52（30度）之后，就是负贡献（越大越不可通行）。
+  # roughness粗糙度的范围是0-正无穷：0-0.1之间，都是有贡献的，大于0.1，就是负贡献  
+
+  # - name: traversability
+  #   type: gridMapFilters/MathExpressionFilter
+  #   params:
+  #     output_layer: traversability
+  #     expression: 0.5 * (1.0 - (slope / 0.52)) + 0.5 * (1.0 - (roughness / 0.1))
+
+  - name: traversability
+    type: gridMapFilters/MathExpressionFilter
+    params:
+      output_layer: traversability
+      # 表达式说明：
+      # - 前半部分：原坡度+粗糙度的可通行性（占70%权重）：1.0是安全，0是最危险
+      # - 后半部分：边缘惩罚项（占30%权重，edges越大，惩罚越重）
+      # - clamp(..., 0, 1)：强制结果在0~1区间，避免负数/超界  0.5，0.2，0.3转换为0.4，0.1，0.5先不加这个边缘层 + 0.3*(1.0-(edges/0.4))
+      expression: 0.5*(1.0-(slope/0.52)) + 0.2*(1.0-(roughness/0.2))+ 0.3*(1.0-(edges/0.4))
+      # expression: max(0.0, min(1.0, 0.5*(1.0-(slope/0.52)) + 0.2*(1.0-(roughness/0.1)) + 0.3*(1.0-(edges/0.25))))
+      # 可选：提前计算edges的最大值（若知道edges范围，比如max_edges=0.5，直接写死；若未知，用以下动态计算）
+      # expression: clamp(0.7*(0.5*(1.0-(slope/0.52)) + 0.5*(1.0-(roughness/0.1))) - 0.3*(edges/(max(edges)+1e-6)), 0, 1)
+      # expression: 0.8*(1.0-(slope/0.52)) + 0.3*(1.0-(edges/0.4))
+  # 阈值裁切
+  # Set lower threshold on traversability.
+  - name: traversability_lower_threshold
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: traversability
+      output_layer: traversability
+      lower_threshold: 0.2
+      set_to: 0.0
+
+  # Set upper threshold on traversability.
+  - name: traversability_upper_threshold
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: traversability
+      output_layer: traversability
+      upper_threshold: 1.0
+      set_to: 1.0 # Other uses: .nan, .inf
+
+  # Restore unknown areas from the original elevation layer so unobserved
+  # point-cloud cells remain unknown in the OccupancyGrid and saved PGM.
+  - name: restore_unknown_mask
+    type: gridMapFilters/RestoreUnknownMaskFilter
+    params:
+      mask_layer: elevation
+      input_layer: traversability
+      output_layer: traversability

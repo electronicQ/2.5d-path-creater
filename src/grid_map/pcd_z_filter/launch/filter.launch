@@ -1,0 +1,6 @@
+<launch>
+    <node pkg="pcd_z_filter" type="pcd_z_filter_node" name="pcd_z_filter_node" output="screen">
+        <param name="input_file" value="$(find hdl_localization)/data/origin.pcd" />
+        <param name="output_file" value="$(find hdl_localization)/data/origin_removeZ.pcd" />
+        <param name="z_threshold" value="0.1" /> </node>
+</launch>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>pcd_z_filter</name>
+  <version>0.0.1</version>
+  <description>The pcd_z_filter package for filtering PCD point clouds based on Z-axis threshold.</description>
+
+  <maintainer email="user@todo.todo">User</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>pcl_ros</depend>
+  <depend>pcl_conversions</depend>
+  <depend>libpcl-all-dev</depend> <export>
+    </export>
+</package>

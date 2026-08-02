@@ -1,0 +1,32 @@
+#这是对应的image_to_gridmap_demo的参数，我们现在不需要这个参数，因为使用的是点云转换为高程图发布的话题
+# image_to_gridmap_demo:
+#   image_topic: "/image_publisher/image"
+#   resolution: 0.02
+#   map_frame_id: "map"
+#   min_height: -0.5
+#   max_height: 1.0
+
+# 这是提取多层地图的某一层转换为occupancyGrid类型地图，并发布对应话题的逻辑：
+# （1）高程地图转换后的多层grid_map地图话题为grid_map_topic: /grid_map_filter_demo/filtered_map
+# （2）需要转换的地图层并发布的话题：第一是/grid_map_visualization/surface_normals话题，第二是/grid_map_visualization/traversability_grid话题
+
+# 这个grid_map_visualization节点会转换traversability_grid层为OccupancyGrid类型的occupancy_grid地图，并发布对应的话题/grid_map_visualization/traversability_grid
+grid_map_visualization:
+  grid_map_topic: /grid_map_filter_demo/filtered_map
+  grid_map_visualizations:
+
+    - name: surface_normals
+      type: vectors
+      params:
+        layer_prefix: normal_vectors_
+        position_layer: elevation
+        scale: 0.06
+        line_width: 0.005
+        color: 15600153 # red
+
+    - name: traversability_grid
+      type: occupancy_grid
+      params:
+        layer: traversability
+        data_min: 1.0       #因为traversability中1是最安全的（这是小端），0是最危险的（这是大端），ros中0 (Free)100 (Lethal)
+        data_max: 0.0

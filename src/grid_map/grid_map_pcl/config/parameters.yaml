@@ -1,0 +1,41 @@
+pcl_grid_map_extraction:
+  num_processing_threads: 4
+  cloud_transform:
+    translation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    rotation: #intrinsic rotation X-Y-Z (r-p-y)sequence,对于无人机建图，p=1.57
+      r: 0.0
+      p: 0.0
+      y: 0.0
+
+  #点云聚类分析，在每个grid cell里，把“属于同一物理表面”的点找出来，用它们来算高程。
+  cluster_extraction:
+    cluster_tolerance: 0.2    #（1）两点之间小于这个距离 ，认为同一簇
+    min_num_points: 1           #（2）聚类里最少点数，少于这个点数 → 丢弃（认为是噪声）以前是10
+    max_num_points: 1000000
+    use_max_height_as_cell_elevation: false     #flase表示使用均值，应用于地形建模（地面）；true用最大值，应用于障碍器地图（最高点）
+
+  #离群点去除（去噪）
+  outlier_removal:
+    is_remove_outliers: true
+    mean_K: 5
+    stddev_threshold: 3.0 #调大这个才能让离群点去除减弱
+
+  #点云下采样
+  downsampling:
+    is_downsample_cloud: true
+    voxel_size:
+      x: 0.3
+      y: 0.3
+      z: 0.3
+
+  #得到的栅格地图，（1）一个格子至少多少个点才有效；（3）每个grid cell的边长
+  grid_map:
+    min_num_points_per_cell: 1
+    max_num_points_per_cell: 100000
+    resolution: 0.5
+
+    
+       
