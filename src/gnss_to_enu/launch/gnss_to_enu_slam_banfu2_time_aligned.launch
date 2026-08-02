@@ -1,0 +1,31 @@
+<launch>
+    <param name="use_sim_time" value="false" />
+
+    <arg name="raw_gnss_topic" default="/handsfree/rtk/gnss" />
+    <arg name="aligned_gnss_topic" default="/handsfree/rtk/gnss_time_aligned" />
+    <arg name="rtk_odom_topic" default="/rtk/gps_odom" />
+    <arg name="offset_seconds" default="1782701065.9716315" />
+
+    <node pkg="gnss_to_enu"
+          type="gnss_timestamp_compensator.py"
+          name="gnss_timestamp_compensator"
+          output="screen">
+        <param name="sub_topic" value="$(arg raw_gnss_topic)" />
+        <param name="pub_topic" value="$(arg aligned_gnss_topic)" />
+        <param name="offset_seconds" value="$(arg offset_seconds)" />
+    </node>
+
+    <node pkg="gnss_to_enu" type="gnss_to_enu.py" name="gnss_to_enu_node" output="screen">
+        <param name="sub_topic" value="$(arg aligned_gnss_topic)" />
+        <param name="pub_topic" value="$(arg rtk_odom_topic)" />
+
+        <param name="use_auto_datum" value="true" />
+
+        <param name="datum_lat" value="22.56580437" />
+        <param name="datum_lon" value="113.49363833" />
+        <param name="datum_alt" value="4.89360000" />
+
+        <param name="min_T_intervel" value="1.0" />
+        <param name="min_D_interval" value="1.0" />
+    </node>
+</launch>

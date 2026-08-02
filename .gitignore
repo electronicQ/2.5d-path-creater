@@ -1,0 +1,28 @@
+# ROS/catkin generated outputs
+build/
+devel/
+install/
+log/
+
+# Python caches and local test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local editor and agent state
+.vscode/
+.idea/
+.agents/
+.codex/
+
+# Runtime outputs
+output/
+
+# Large raw mapping artifacts
+*.bag
+*.pcd
+
+# Keep lightweight static planning maps tracked.
+!map/pgm/*.pgm
+!map/pgm/*.yaml
