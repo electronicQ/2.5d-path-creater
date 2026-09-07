@@ -36,6 +36,12 @@
 
 #include "parameters.h"
 
+// =========================
+// 全局运行状态与缓存
+// 这里放的是整个 LIGO 节点共享的状态变量，
+// 包括缓存队列、时间戳、传感器参数、后端对象指针等。
+// 这些变量会在 readParameters() 里被初始化，在其他 .cpp 中被直接使用。
+// =========================
 typename curvefitter::TrajectoryManager<4>::Ptr traj_manager = std::make_shared<curvefitter::TrajectoryManager<4>>();
 bool is_first_frame = true;
 double lidar_end_time = 0.0, first_lidar_time = 0.0, time_con = 0.0;
@@ -44,9 +50,18 @@ int pcd_index = 0;
 IVoxType::Options ivox_options_;
 int ivox_nearby_type = 6;
 
+//如果有后端优化，每个关键帧点云数据存储在这三个容器中，分别是存储用于存储，是给后端修正后“重建局部历史地图”用的：：
+//1、关键帧（imu系）在世界坐标系（camera_init）下的位姿
+//2、关键帧时间
+//3、关键帧对应的局部点云（在关键帧IMU系），没有直接保存为世界坐标，因此以后可以利用新的关键帧位姿重新变换。
+//LiDAR_points[i][j] (第i个关键帧中的第j个点imu系下的坐标点），pose_graph_key_pose[i] 对应关键帧在世界系下的位姿
+//二者相乘，就得到了点云点在世界系下的坐标。
+//后端优化时，pose_graph_key_pose[i]改变，叠加了一个优化的修正量，得到了优化后的位姿，同样乘imu系下的关键帧点云，就得到了优化后的世界系点云
+//生成新的世界坐标，暂存在updatedmap中，然后加入ivox_last_并更新ivox_
 std::vector<curvefitter::PoseData> pose_graph_key_pose;
 std::vector<double> pose_time_vector;
 std::vector<std::vector<Eigen::Vector3d> > LiDAR_points;
+
 int points_num;
 double map_time;
 state_output state_out;
@@ -109,13 +124,23 @@ MeasureGroup Measures;
 
 ofstream fout_out, fout_rtk, fout_global, fout_ppp; 
 
+// =========================
+// 参数读取入口
+// 所有 rosparam / yaml 参数最终都在这里落到全局变量和模块对象里。
+// 读完这一个函数，就能知道整套系统当前启用了什么传感器、什么同步方式、什么地图参数。
+// =========================
 void readParameters(ros::NodeHandle &nh)
 {
+  // 先构建各子模块对象，后面参数会写入这些对象的成员中。
   p_pre.reset(new Preprocess());
 //   Init_LI.reset(new LI_Init());
   p_imu.reset(new ImuProcess());
   p_gnss.reset(new GNSSProcess());
   p_nmea.reset(new NMEAProcess());
+
+  // -------------------------
+  // 1) 前端公共参数
+  // -------------------------
   nh.param<bool>("prop_at_freq_of_imu", prop_at_freq_of_imu, 1);
   nh.param<bool>("check_satu", check_satu, 1);
   nh.param<int>("init_map_size", init_map_size, 100);
@@ -136,6 +161,10 @@ void readParameters(ros::NodeHandle &nh)
   nh.param<bool>("mapping/imu_en",imu_en,true);
   nh.param<bool>("mapping/init_with_imu",init_with_imu,true);
   nh.param<double>("mapping/imu_time_inte",imu_time_inte,0.005);
+
+  // -------------------------
+  // 2) 前端噪声与预处理参数
+  // -------------------------
   nh.param<double>("mapping/lidar_meas_cov",laser_point_cov,0.1);
   nh.param<double>("mapping/acc_cov_input",acc_cov_input,0.1);
   nh.param<double>("mapping/vel_cov",vel_cov,20);
@@ -154,6 +183,10 @@ void readParameters(ros::NodeHandle &nh)
   nh.param<int>("preprocess/scan_rate", p_pre->SCAN_RATE, 10);
   nh.param<int>("preprocess/timestamp_unit", p_pre->time_unit, 1);
   nh.param<double>("mapping/match_s", match_s, 81);
+
+  // -------------------------
+  // 3) 坐标系、外参、地图与输出控制
+  // -------------------------
   nh.param<std::vector<double>>("mapping/gravity", gravity, std::vector<double>());
   nh.param<std::vector<double>>("mapping/gravity_init", gravity_init, std::vector<double>());
   nh.param<std::vector<double>>("mapping/extrinsic_T", extrinT, std::vector<double>());
@@ -171,6 +204,8 @@ void readParameters(ros::NodeHandle &nh)
 //   nh.param<double>("mapping/lidar_meas_cov",laser_point_cov,0.1);
   nh.param<bool>("mapping/dyn_filter",dyn_filter,1);
   nh.param<double>("mapping/dyn_filter_resolution",dyn_filter_resolution,0.1);
+
+  // iVox 是局部增量体素地图，nearby_type 决定查询邻域大小。
   // nh.param<double>("gnss/odo_weight",p_gnss->odo_weight, 0.1);
   nh.param<double>("gnss/gnss_ekf_noise",gnss_ekf_noise,0.01);
   nh.param<vector<double>>("gnss/gnss_extrinsic_T", extrinT_gnss, vector<double>());
@@ -189,8 +224,14 @@ void readParameters(ros::NodeHandle &nh)
   } else {
     LOG(WARNING) << "unknown ivox_nearby_type, use NEARBY18";
     ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY18;
-  }
+    }
+    // 统一把重力向量写入 IMU 模块，后面初始化姿态和积分都要用。
     p_imu->gravity_ << VEC_FROM_ARRAY(gravity);
+
+    // -------------------------
+    // 4) 原始 GNSS 后端参数
+    // 仅当 gnss_enable=true 时生效。
+    // -------------------------
     nh.param<bool>("gnss/gnss_enable", GNSS_ENABLE, false);
     cout << "gnss enable:" << GNSS_ENABLE << endl;
     if (GNSS_ENABLE)
@@ -254,6 +295,11 @@ void readParameters(ros::NodeHandle &nh)
     {
         nh.param<string>("gnss/rtk_pvt_topic",rtk_pvt_topic,"/ublox_driver/receiver_pvt");
     }
+
+    // -------------------------
+    // 5) NMEA 松耦合后端参数
+    // 当前 avia_handsfree.launch 走的就是这条线。
+    // -------------------------
     nh.param<bool>("nmea/nmea_enable", NMEA_ENABLE, false);
     cout << "nmea enable:" << NMEA_ENABLE << endl;
     if (NMEA_ENABLE)
@@ -279,6 +325,9 @@ void readParameters(ros::NodeHandle &nh)
         nh.param<double>("gnss/outlier_thres",p_nmea->p_assign->outlier_thres, 0.1);
         nh.param<double>("gnss/outlier_thres_init",p_nmea->p_assign->outlier_thres_init, 0.1);
         nh.param<double>("gnss/gnss_sample_period",p_nmea->nmea_sample_period, 0.1);
+
+        // 初始化阶段要求 NMEA 的关键帧有足够位移，否则 SVD 对齐容易退化。
+        nh.param<double>("nmea/init_svd_min_distance",p_nmea->init_svd_min_distance, 0.35);
         nh.param<double>("nmea/ppp_std_thres",p_nmea->p_assign->ppp_std_threshold, 20.0);
         nh.param<bool>("gnss/nolidar",nolidar, false);
         nh.param<int>("gnss/window_size",p_nmea->wind_size, 5);
@@ -286,6 +335,7 @@ void readParameters(ros::NodeHandle &nh)
     }
 }
 
+// 欧拉角导出工具，主要用于日志和调试输出。
 Eigen::Matrix<double, 3, 1> SO3ToEuler(const SO3 &rot) 
 {
     double sy = sqrt(rot(0,0)*rot(0,0) + rot(1,0)*rot(1,0));
@@ -307,6 +357,7 @@ Eigen::Matrix<double, 3, 1> SO3ToEuler(const SO3 &rot)
     return ang;
 }
 
+// 打开调试输出文件，GNSS/NMEA 模式下会额外写入轨迹和 RTK 结果。
 void open_file()
 {
     fout_out.open(DEBUG_FILE_DIR("mat_out.txt"),ios::out);
@@ -334,6 +385,7 @@ void open_file()
 
 }
 
+// 把当前状态写成文本/轨迹文件，方便离线检查轨迹与全局坐标。
 void cout_state_to_file(Eigen::Vector3d &pos_lla)
 {
     {

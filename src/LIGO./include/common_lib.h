@@ -71,6 +71,14 @@ MTK_BUILD_MANIFOLD(state_output,
 ((vect3, bg))
 ((vect3, ba))
 );
+// 0 ~ 2    pos      位置，世界坐标系下的位置
+// 3 ~ 5    rot      姿态，IMU/body 到世界系的旋转，SO3误差维度为3
+// 6 ~ 8    vel      速度，世界坐标系下的速度
+// 9 ~ 11   omg      角速度状态
+// 12 ~ 14  acc      加速度状态
+// 15 ~ 17  gravity  重力向量
+// 18 ~ 20  bg       陀螺仪 bias
+// 21 ~ 23  ba       加速度计 bias
 
 MTK_BUILD_MANIFOLD(input_ikfom,
 ((vect3, acc))
@@ -140,10 +148,10 @@ struct MeasureGroup     // Lidar data and imu dates for the curent process
         lidar_last_time = 0.0;
         this->lidar.reset(new PointCloudXYZI());
     };
-    double lidar_beg_time;
-    double lidar_last_time;
-    PointCloudXYZI::Ptr lidar;
-    deque<sensor_msgs::Imu::ConstPtr> imu;
+    double lidar_beg_time;              //当前 LiDAR 帧开始时间
+    double lidar_last_time;             //当前 LiDAR 帧结束时间
+    PointCloudXYZI::Ptr lidar;          //当前 LiDAR 点云
+    deque<sensor_msgs::Imu::ConstPtr> imu;  //当前 LiDAR 时间段内的 IMU 数据
 };
 
 template <typename T>

@@ -126,6 +126,8 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
 
 #define MAX_LINE_NUM 128
 
+
+//看看这个avia雷达数据是怎么处理的
 void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
 {
   pl_surf.clear();

@@ -56,6 +56,7 @@ class NMEAProcess
   void Reset();
   void processNMEA(const nav_msgs::OdometryPtr &gnss_meas, state_output &state);
   bool NMEALIAlign();
+  bool shouldAcceptInitKeyframe(const nav_msgs::OdometryPtr &nmea_meas, const state_output &state);
   void TrajAlign(Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>&local_traj, Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>&enu_traj, Eigen::Vector3d &pos, Eigen::Matrix3d &rot);
   // bool TrajAlign(Eigen::Vector3d &pos, Eigen::Matrix3d &rot);
   void updateNMEAstatistics(Eigen::Vector3d &pos);
@@ -85,6 +86,7 @@ class NMEAProcess
   int frame_num = 0; // 
   double last_nmea_time = 0.0; //
   double nmea_sample_period = 0.1;
+  double init_svd_min_distance = 0.35;
 
   // double diff_t_gnss_local = 0.0;
   // Eigen::Vector3d ecef_pos, first_xyz_ecef_pvt, first_xyz_ecef_lla, first_lla_pvt, first_lla_lla;
@@ -102,6 +104,9 @@ class NMEAProcess
   // double para_rcv_ddt[WINDOW_SIZE+1] = {0}; //
   Eigen::Vector3d anc_enu, gravity_init;
   Eigen::Vector3d anc_local = Eigen::Vector3d::Zero();
+  Eigen::Vector3d init_svd_last_accept_pos = Eigen::Vector3d::Zero();
+  double init_svd_last_accept_time = 0.0;
+  bool init_svd_has_last = false;
   // Eigen::Matrix3d R_ecef_enu;
   double yaw_enu_local = 0.0;
   

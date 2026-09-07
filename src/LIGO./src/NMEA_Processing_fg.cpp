@@ -60,6 +60,9 @@ void NMEAProcess::Reset()
   frame_count = 0;
   invalid_lidar = false;
   Rot_nmea_init.setIdentity();
+  init_svd_last_accept_pos.setZero();
+  init_svd_last_accept_time = 0.0;
+  init_svd_has_last = false;
   p_assign->process_feat_num = 0;
   nmea_ready = false;
   // if (nolidar)
@@ -111,6 +114,10 @@ void NMEAProcess::processNMEA(const nav_msgs::OdometryPtr &nmea_meas, state_outp
       ROS_WARN("[DIAG] NMEA 协方差过大被拦截!");   // ← 加这行
       return;
     }
+    if (!shouldAcceptInitKeyframe(nmea_meas, state))
+    {
+      return;
+    }
     {
       rot_window[frame_count] = state.rot; //.normalized().toRotationMatrix();
       pos_window[frame_count] = state.pos + state.rot * Tex_imu_r; // .normalized()
@@ -130,6 +137,10 @@ void NMEAProcess::processNMEA(const nav_msgs::OdometryPtr &nmea_meas, state_outp
     else
     {
       ROS_INFO("[DEBUG] NMEALIAlign returned false");
+      if (frame_count > wind_size)
+      {
+        frame_count = wind_size;
+      }
     }
   }
   else
@@ -138,6 +149,43 @@ void NMEAProcess::processNMEA(const nav_msgs::OdometryPtr &nmea_meas, state_outp
                       "当前帧 ts=%.3f frame_num=%d", nmea_meas->header.stamp.toSec(), frame_num);
     nmea_meas_[0] = nmea_meas;
   }
+}
+
+bool NMEAProcess::shouldAcceptInitKeyframe(const nav_msgs::OdometryPtr &nmea_meas, const state_output &state)
+{
+  Eigen::Vector3d current_pos;
+  if (!nolidar)
+  {
+    current_pos = state.pos + state.rot * Tex_imu_r;
+  }
+  else
+  {
+    current_pos = state.pos;
+  }
+
+  if (!init_svd_has_last)
+  {
+    init_svd_has_last = true;
+    init_svd_last_accept_pos = current_pos;
+    init_svd_last_accept_time = nmea_meas->header.stamp.toSec();
+    ROS_INFO("[NMEA Init] accept first keyframe ts=%.3f", init_svd_last_accept_time);
+    return true;
+  }
+
+  double move_dist = (current_pos - init_svd_last_accept_pos).norm();
+  if (move_dist < init_svd_min_distance)
+  {
+    ROS_INFO_THROTTLE(1.0,
+                      "[NMEA Init] Skip non-keyframe ts=%.3f move=%.3fm < threshold=%.3fm",
+                      nmea_meas->header.stamp.toSec(), move_dist, init_svd_min_distance);
+    return false;
+  }
+
+  init_svd_last_accept_pos = current_pos;
+  init_svd_last_accept_time = nmea_meas->header.stamp.toSec();
+  ROS_INFO("[NMEA Init] accept keyframe ts=%.3f move=%.3fm threshold=%.3fm",
+           init_svd_last_accept_time, move_dist, init_svd_min_distance);
+  return true;
 }
 
 void NMEAProcess::runISAM2opt(void) //

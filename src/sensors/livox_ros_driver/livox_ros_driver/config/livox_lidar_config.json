@@ -24,7 +24,7 @@
         "enable_timesync": true,
         "device_name": "/dev/HFRobotRTK",
         "comm_device_type": 0,
-        "baudrate_index": 6,
+        "baudrate_index": 6,        
         "parity_index": 0     
     }
 }

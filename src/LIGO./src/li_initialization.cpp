@@ -248,6 +248,7 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
             *ptr_con_i = *ptr_con;
             lidar_buffer.push_back(ptr_con_i);
             double time_con_i = time_con;
+            // 多帧合并时，time_con 是合并窗口内第一帧 LiDAR 的起始绝对时间(s)。
             time_buffer.push_back(time_con_i);
             ptr_con->clear();
             frame_ct = 0;
@@ -258,6 +259,8 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
         if (ptr->points.size() > 0)
         {
             lidar_buffer.emplace_back(ptr);
+            // time_buffer 与 lidar_buffer 一一对应，保存这帧点云的帧起始绝对时间(s)。
+            // 点云中每个点的 curvature 字段在 preprocess 中被借用为相对帧起点的时间偏移(ms)。
             time_buffer.emplace_back(msg->header.stamp.toSec());
         }
     }
@@ -313,6 +316,7 @@ void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg)
             *ptr_con_i = *ptr_con;
             double time_con_i = time_con;
             lidar_buffer.push_back(ptr_con_i);
+            // 多帧合并时，time_con 是合并窗口内第一帧 LiDAR 的起始绝对时间(s)。
             time_buffer.push_back(time_con_i);
             ptr_con->clear();
             frame_ct = 0;
@@ -323,6 +327,8 @@ void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg)
         if (ptr->points.size() > 0)
         {
             lidar_buffer.emplace_back(ptr);
+            // time_buffer 与 lidar_buffer 一一对应，保存这帧点云的帧起始绝对时间(s)。
+            // 点云中每个点的 curvature 字段在 preprocess 中被借用为相对帧起点的时间偏移(ms)。
             time_buffer.emplace_back(msg->header.stamp.toSec());
         }
     }
@@ -365,6 +371,8 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
     // mtx_buffer.unlock();
     // sig_buffer.notify_all();
 }
+
+//以一帧 LiDAR 为主时间窗口，把这一帧 LiDAR、对应时间段内的 IMU、对应时间段内的 GNSS/NMEA 数据同步出来。
 
 bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, queue<nav_msgs::OdometryPtr> &nmea_msg)
 {
@@ -591,7 +599,11 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
         {
             if (!lidar_pushed)
             {
+                //meas定义在common_lib.h中
+                //从lidar回调函数对应的缓存队列中取出最早的雷达点云存在meas.lidar中
                 meas.lidar = lidar_buffer.front();
+
+                //从lidar回调函数对应的缓存队列中取出最早的雷达时间存在meas.lidar中
                 meas.lidar_beg_time = time_buffer.front();
                 lose_lid = false;
                 if(meas.lidar->points.size() < 1) 
@@ -603,6 +615,8 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
                 else
                 {
                     double end_time = meas.lidar->points.back().curvature;
+
+                    
                     for (auto pt: meas.lidar->points)
                     {
                         if (pt.curvature > end_time)
@@ -638,7 +652,7 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
                         front_gnss_ts = time2sec(gnss_meas_buf.front()[0]->time);
                     }
                     if (!gnss_msg.empty())
-                    {
+                    {  
                         time_buffer.pop_front();
                         lidar_buffer.pop_front();
                         lidar_pushed = false;
@@ -738,6 +752,7 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
     {
         lose_lid = false;
         meas.lidar = lidar_buffer.front();
+        // 当前待处理 LiDAR 帧的起始绝对时间(s)，由 LiDAR 消息 header.stamp 写入 time_buffer。
         meas.lidar_beg_time = time_buffer.front();
         if(meas.lidar->points.size() < 1) 
         {
@@ -749,6 +764,8 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
         }
         else
         {
+            // curvature 在这里表示点相对当前 LiDAR 帧起点的时间偏移，单位是 ms。
+            // 先从最后一个点取一个初值，再遍历整帧点云找最大偏移，避免点云未按时间排序。
             double end_time = meas.lidar->points.back().curvature;
             for (auto pt: meas.lidar->points)
             {
@@ -757,6 +774,8 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
                     end_time = pt.curvature;
                 }
             }
+            // 帧结束绝对时间(s) = 帧起始绝对时间(s) + 最大点时间偏移(ms)/1000。
+            // 后续同步 IMU / GNSS / NMEA 都围绕 [lidar_beg_time, lidar_end_time] 这个窗口。
             lidar_end_time = meas.lidar_beg_time + end_time / double(1000);
             // cout << "check time lidar:" << end_time << endl;
             meas.lidar_last_time = lidar_end_time;
@@ -959,4 +978,3 @@ bool sync_packages(MeasureGroup &meas, queue<std::vector<ObsPtr>> &gnss_msg, que
     return true;
     }
 }
-

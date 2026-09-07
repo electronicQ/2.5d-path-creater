@@ -13,7 +13,8 @@ class GNSSToENU:
 
 
         # 初始化时打开文件
-        self.gt_file = open('/home/cclg/traj_rtk_origin.tum', 'w')
+        # self.gt_file = open('/home/cclg/traj_rtk_origin.tum', 'w')
+
         # 🌟 【新增：读取原点配置参数】
         # 默认 true: 自动获取第一帧作为原点； false: 使用下面设定的固定原点
         self.use_auto_datum = rospy.get_param('~use_auto_datum', True) 
@@ -119,7 +120,8 @@ class GNSSToENU:
     
     def gnss_cb(self, msg):
         # ==========================================
-        # 1. 物理状态关卡：必须是地基增强 (Fix 或 Float)，这个不是很需要，因为和精度熔断重叠了，除非协方差有问题，那只能通过状态熔断解决了
+        # 1. 物理状态关卡：必须是地基增强 ，对于rsensor_msgs/NavSatFix，包括有消息头（包含时间戳和坐标系）、status定位状态、经纬高、位置协方差；
+        # 消息类型对应的状态有-1，0，1，2(Fix 或 Float是NMEA消息的类型,对应ros中的2状态)，这个不是很需要，因为和精度熔断重叠了，除非协方差有问题，那只能通过状态熔断解决了
         # ==========================================
         # if msg.status.status != 2: 
         #   return
@@ -255,8 +257,8 @@ class GNSSToENU:
         self.pub.publish(odom_msg)
 
         # 【新程序】写入 TUM 格式轨迹文件: 时间戳已改为仿真时间
-        # timestamp x y z qx qy qz qw
-        self.gt_file.write(f"{current_time:.6f} {enu[0]:.6f} {enu[1]:.6f} {enu[2]:.6f} 0.0 0.0 0.0 1.0\n")
+        # timestamp x y z qx qy qz qw，这个是把局部enu里程计的轨迹写道轨迹文件中
+        # self.gt_file.write(f"{current_time:.6f} {enu[0]:.6f} {enu[1]:.6f} {enu[2]:.6f} 0.0 0.0 0.0 1.0\n")
         
 if __name__ == '__main__':
     try:

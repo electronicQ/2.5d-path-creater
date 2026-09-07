@@ -32,7 +32,7 @@ mapping:
     gravity: [0.0, 0.0, -9.81] # 
     init_with_imu: true
     gravity_init: [0.0, 9.810, 0.0] # preknown gravity in IMU frame. used when it is impossible to estimate it from acc measurements, i.e., init_with_imu is false
-    extrinsic_T: [-0.011, -0.02329, 0.04412] # mid360[0.04165, 0.02326, -0.0284] # avia # 
+    extrinsic_T: [ 0.04165, 0.02326, -0.0284 ] # mid360[0.04165, 0.02326, -0.0284] # avia # 
     extrinsic_R: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0] # extrinsics of LiDAR to IMU represented in IMU frame
@@ -77,7 +77,7 @@ gnss:
     local_trigger_info_topic: "/external_trigger"       # external trigger info of the local sensor, if `gnss_local_online_sync` is true
     gnss_local_time_diff: 18.0 # 27.062                 # difference between GNSS and local time (s), if `gnss_local_online_sync` is false
     gnss_iono_default_parameters: [0.1118E-07,  0.2235E-07, -0.4172E-06,  0.6557E-06, 0.1249E+06, -0.4424E+06,  0.1507E+07, -0.2621E+06]
-    gnss_extrinsic_T: [0.011, 0.03155, 0.02365] # h360 [-0.39765, 0.13204, 0.0284] # m300 [0.0055, 0.03626, 0.02212] #m360 
+    gnss_extrinsic_T: [ 0.04165, 0.02326, -0.0284 ] # h360 [-0.39765, 0.13204, 0.0284] # m300 [0.0055, 0.03626, 0.02212] #m360 
     gnss_extrinsic_R: [ 1, 0, 0,
                     0, 1, 0,
                     0, 0, 1 ]            # extrinsics of the GNSS receiver to IMU represented in IMU frame
@@ -87,7 +87,8 @@ nmea:
     posit_odo_topic: "/rtk/gps_odom" # "/mavros/local_position/odom" # ppp solutions topic
     ppp_std_thres: 1000.0 # ppp solution std thred
     pos_noise: 1 # factor cov for position factors
-    nmea_weight: 100.0 
+    nmea_weight: 10.0 #因为板芙的gnss数据不好，所以降低权重从100到10
+    init_svd_min_distance: 0.35 # meters, SVD init keyframe spacing
     # 【修复】0.0: gnss_to_enu改用rospy.Time.now()打戳后，NMEA与LiDAR/IMU同在bag仿真时间轴，无需补偿
     nmea_local_time_diff: 0.0 # 27.062 # difference between NMEA solution and local time (s)
     ppp_file_name: "deg2.pos" # "deg2.pos" # ""

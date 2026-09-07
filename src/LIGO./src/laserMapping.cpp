@@ -71,19 +71,40 @@ Eigen::Vector3d first_pvt_used, first_lla_used;
 
 bool  flg_reset = false, flg_exit = false;
 
-//surf feature in map
+// =========================
+// 全局点云缓存与地图维护变量
+// =========================
+
+//保存当前 LiDAR 帧经过 p_imu->Process() 处理后的点云，后续用于下采样
+//当前代码中名字叫“去畸变点云”，但 IMU_Processing.cpp 当前主要是复制点云，并没有完成完整运动去畸变
 PointCloudXYZI::Ptr feats_undistort(new PointCloudXYZI());
+
+//（遗留变量），实际使用的是feats_down_body
 PointCloudXYZI::Ptr feats_down_body_space(new PointCloudXYZI());
+
+//保存地图初始化阶段积累的点云，当前帧点云先通过当前位姿转换到世界坐标系，再不断追加到 init_feats_world
+//达到 init_map_size 后，加入 ivox_ 地图
 PointCloudXYZI::Ptr init_feats_world(new PointCloudXYZI());
+
+//（遗留变量）
 std::deque<PointCloudXYZI::Ptr> depth_feats_world;
+
+//这是 PCL 的体素降采样器。
 pcl::VoxelGrid<PointType> downSizeFilterSurf;
 
 V3D euler_cur;
 
+//ros输出：
+//1、保存整条轨迹 2、内部包含多个 geometry_msgs::PoseStamped 3、发布到 ROS 话题 /path
 nav_msgs::Path path;
+//保存当前 LIO 估计的位姿，发布到/aft_mapped_to_init，还会发布camera_init -> aft_mapped的TF
 nav_msgs::Odometry odomAftMapped;
+//保存当前时刻的一个位姿，它是 path 中单个轨迹点的临时消息，每次调用 publish_path() 时，先把当前滤波位姿写入它，再追加到 path
 geometry_msgs::PoseStamped msg_body_pose;
 
+
+
+// 收到 SIGINT 后只置退出标志，主循环在安全位置退出。
 void SigHandle(int sig)
 {
     flg_exit = true;
@@ -91,6 +112,7 @@ void SigHandle(int sig)
     sig_buffer.notify_all();
 }
 
+// 将 LiDAR 坐标系下的点通过外参转换到 IMU / body 坐标系。
 void pointBodyLidarToIMU(PointType const * const pi, PointType * const po)
 {
     V3D p_body_lidar(pi->x, pi->y, pi->z);
@@ -104,12 +126,18 @@ void pointBodyLidarToIMU(PointType const * const pi, PointType * const po)
     po->intensity = pi->intensity;
 }
 
-//向 ivox_ 这个增量式体素地图容器中动态添加当前帧的新点云。
+// 向增量式体素地图中加入当前帧的新点，更新局部地图。
 void MapIncremental() {
+    //一个存点云的vector容器，存储当前帧点云
     PointVector points_to_add;
-    int cur_pts = feats_down_world->size();
+
+    //当前帧点云在feats_down_world变量中，提取其数量
+    int cur_pts = feats_down_world->size(); 
+
+    //这是容器自带的函数，因为容器也是一个动态数组，这个函数用处的分配points_to_add容器cur_pts个元素的存储空间，但不创建存储空间内的对象
     points_to_add.reserve(cur_pts);
     
+    //把
     for (size_t i = 0; i < cur_pts; ++i) {
         /* decide if need add to map */
         PointType &point_world = feats_down_world->points[i];
@@ -138,6 +166,7 @@ void MapIncremental() {
     ivox_->AddPoints(points_to_add);   
 }
 
+// 发布初始化阶段积累出来的第一批地图点云。
 void publish_init_map(const ros::Publisher & pubLaserCloudFullRes)
 {
     int size_init_map = init_feats_world->size();
@@ -154,13 +183,14 @@ void publish_init_map(const ros::Publisher & pubLaserCloudFullRes)
 PointCloudXYZI::Ptr pcl_wait_pub(new PointCloudXYZI(500000, 1));
 PointCloudXYZI::Ptr pcl_wait_save(new PointCloudXYZI());
 
+// 发布当前帧在世界系下的点云，并可选写入 PCD 文件。
 void publish_frame_world(const ros::Publisher & pubLaserCloudFullRes)
 {
-    //进来就计算当前帧降采样后的点云数量，一是用来发布当前帧降采样后的点云，二十用来保存这些数量的点云
+    // 当前帧点云已被估计位姿转换到世界坐标系。
     PointCloudXYZI::Ptr laserCloudFullRes(feats_down_body); // (points_num); 
     int size = laserCloudFullRes->points.size();
 
-    //它读取 feats_down_world，这是当前这一帧经过降采样并且已经根据当前机器人的位姿**转换到世界坐标系（起点局部坐标系）**下的特征点云。
+    // 发布到 RViz 的世界系点云。
     if (scan_pub_en)
     {
    
@@ -188,8 +218,9 @@ void publish_frame_world(const ros::Publisher & pubLaserCloudFullRes)
     }
     
     /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. noted that pcd save will influence the real-time performences **/
+    /* 1. 确保内存足够
+     * 2. 点云写盘会影响实时性，因此这里按间隔批量保存
+     */
     if (pcd_save_en)
     {
         //修改，注释掉了
@@ -206,7 +237,8 @@ void publish_frame_world(const ros::Publisher & pubLaserCloudFullRes)
             laserCloudWorld->points[i].intensity = feats_down_world->points[i].intensity; // updatedmap[i](2); //
         }
 
-        //把这一帧点云加入到pcl_wait_save这个存储点云指针的地址下。在建图过程中，地图是不断叠加的，之前地图的点云就不会再改变了，因为这个程序也没有对之前的建图点进行优化，每次定位都是优化后的，在将定位处的点加入，不会出现对之前点云进行拉动的情况
+        //把这一帧点云加入到pcl_wait_save这个存储点云指针的地址下。在建图过程中，地图是不断叠加的，之前地图的点云就不会
+        //再改变了，因为这个程序也没有对之前的建图点进行优化，每次定位都是优化后的，在将定位处的点加入，不会出现对之前点云进行拉动的情况
         *pcl_wait_save += *laserCloudWorld;
 
         static int scan_wait_num = 0;
@@ -224,6 +256,7 @@ void publish_frame_world(const ros::Publisher & pubLaserCloudFullRes)
     }
 }
 
+// 发布当前帧在 body / IMU 坐标系下的点云，便于调试坐标变换。
 void publish_frame_body(const ros::Publisher & pubLaserCloudFull_body)
 {
     int size = feats_undistort->points.size();
@@ -242,6 +275,7 @@ void publish_frame_body(const ros::Publisher & pubLaserCloudFull_body)
     pubLaserCloudFull_body.publish(laserCloudmsg);
 }
 
+// 把当前状态写入 ROS 位姿消息。
 template<typename T>
 void set_posestamp(T & out)
 {
@@ -257,6 +291,7 @@ void set_posestamp(T & out)
     }
 }
 
+// 发布当前估计位姿，并广播 camera_init -> aft_mapped 的 TF。
 void publish_odometry(const ros::Publisher & pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = "camera_init";
@@ -287,6 +322,7 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
     br.sendTransform( tf::StampedTransform( transform, odomAftMapped.header.stamp, "camera_init", "aft_mapped" ) );
 }
 
+// 发布轨迹路径，供 RViz 查看整条运动轨迹。
 void publish_path(const ros::Publisher pubPath)
 {
     set_posestamp(msg_body_pose.pose);
@@ -302,15 +338,25 @@ void publish_path(const ros::Publisher pubPath)
     }
 }        
 
+// main 入口：
+// 1. 初始化 ROS 与后台回调线程
+// 2. 读取参数、建立地图、注册滤波模型
+// 3. 进入主循环，按时间顺序处理 LiDAR / IMU / GNSS / NMEA
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "laserMapping");
     setlocale(LC_ALL, ""); // 🌟 新增这行，让 C++ 终端支持中文输出
     ros::NodeHandle nh("~");
+
+    // 启动后台回调线程池，负责消费 subscriber 回调。
     ros::AsyncSpinner spinner(0);
     spinner.start();
+
+    // 读取 launch / yaml 中的运行参数。
     readParameters(nh);
     cout<<"lidar_type: "<<lidar_type<<endl;
+
+    // 初始化局部体素地图容器。
     ivox_ = std::make_shared<IVoxType>(ivox_options_);
     ivox_last_ = std::make_shared<IVoxType>(ivox_options_); //(*ivox_);
     
@@ -324,10 +370,12 @@ int main(int argc, char** argv)
     memset(point_selected_surf, true, sizeof(point_selected_surf));
     downSizeFilterSurf.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min);
     {
+        // 读取 LiDAR 到 IMU 的外参。
         Lidar_T_wrt_IMU<<VEC_FROM_ARRAY(extrinT);
         Lidar_R_wrt_IMU<<MAT_FROM_ARRAY(extrinR);
     }
 
+    // 将参数同步到各处理模块。
     p_imu->lidar_type = p_pre->lidar_type = lidar_type;
     p_imu->imu_en = imu_en;
     if (GNSS_ENABLE)
@@ -366,7 +414,7 @@ int main(int argc, char** argv)
     Eigen::Matrix<double, 24, 24> Q_output = process_noise_cov_output();
     open_file();
 
-    /*** ROS subscribe initialization ***/
+    /*** ROS 订阅初始化：LiDAR / IMU / GNSS / NMEA ***/
     ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
         nh.subscribe(lid_topic, 200000, livox_pcl_cbk) : \
         nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
@@ -551,16 +599,26 @@ int main(int argc, char** argv)
             ("/planner_normal", 1000);
     // ros::Publisher pub_gnss_lla = nh.advertise<sensor_msgs::NavSatFix>("gnss_fused_lla", 1000);
     
-//------------------------------------------------------------------------------------------------------
+    //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
     ros::Rate loop_rate(500);
     bool status = ros::ok();
+
+    // =========================
+    // 主循环：按同步后的 LiDAR 帧驱动整套前端流程
+    // =========================
     while (status)
     {
         if (flg_exit) break;
+        // 可省略，因为回调已由后台线程池处理，这里只是顺手刷新一次队列。
         ros::spinOnce();
+
+        // 从缓存中取出一组按时间对齐的数据包。
         if(sync_packages(Measures, p_gnss->gnss_msg, p_nmea->nmea_msg)) 
         {
+            // =========================
+            // 1. 异常复位：清空地图、滤波器和轨迹管理器
+            // =========================
             if (flg_reset)
             {
                 ROS_WARN("reset when rosbag play back");
@@ -588,6 +646,9 @@ int main(int argc, char** argv)
                 }
             }
 
+            // =========================
+            // 2. 第一帧处理：确定时间基准、重力方向、初始姿态
+            // =========================
             if (flg_first_scan)
             {
                 first_lidar_time = Measures.lidar_beg_time;
@@ -639,7 +700,9 @@ int main(int argc, char** argv)
             double t0, t5;
             t0 = omp_get_wtime();
             
-            /*** downsample the feature points in a scan ***/
+            // =========================
+            // 3. 当前帧预处理：LiDAR 去畸变后下采样并排序
+            // =========================
             p_imu->Process(Measures, feats_undistort);
             if(space_down_sample)
             {
@@ -685,7 +748,9 @@ int main(int argc, char** argv)
                 else{
                 continue;}
             }
-            /*** initialize the map ***/
+            // =========================
+            // 4. 地图初始化：先积累一批点云，再开始正式匹配
+            // =========================
             if(!init_map && !nolidar && !lose_lid)
             {
                 feats_down_world->resize(feats_undistort->size());
@@ -714,14 +779,16 @@ int main(int argc, char** argv)
                 continue;
             }
 
-            /*** ICP and Kalman filter update ***/
+            // =========================
+            // 5. 正式前端匹配：局部地图配准 + 迭代状态估计
+            // =========================
             normvec->resize(feats_down_size);
             feats_down_world->resize(feats_down_size);
 
             Nearest_Points.resize(feats_down_size);
             // t2 = omp_get_wtime();
             
-            /*** iterated state estimation ***/
+            // 为后续残差和雅可比计算预先缓存点坐标。
             crossmat_list.reserve(feats_down_size);
             pbody_list.reserve(feats_down_size);
             pimu_list.reserve(feats_down_size);
@@ -743,7 +810,9 @@ int main(int argc, char** argv)
             }
             {     
                 effct_feat_num = 0;
-                /**** point by point update ****/
+                // =========================
+                // 5.1 点级迭代：按点时间戳边预测边更新
+                // =========================
                 if (time_seq.size() > 0) // || (!GNSS_ENABLE && !NMEA_ENABLE) )
                 {
                     if (GNSS_ENABLE)  
@@ -754,6 +823,8 @@ int main(int argc, char** argv)
                     p_nmea->nolidar_cur = false;}
                 double pcl_beg_time = Measures.lidar_beg_time;
                 idx = -1;
+
+                // 遍历当前帧中的每个时间段，逐点推进状态。
                 for (k = 0; k < time_seq.size(); k++)
                 {
                     PointType &point_body  = feats_down_body->points[idx+time_seq[k]];
@@ -799,6 +870,7 @@ int main(int argc, char** argv)
                     }
                     if(imu_en && !imu_deque.empty())
                     {
+                        // 5.1.1 先用 IMU 把状态推进到当前点时刻附近。
                         bool last_imu = imu_next.header.stamp.toSec() == imu_deque.front()->header.stamp.toSec();
                         while (imu_next.header.stamp.toSec() < time_predict_last_const && !imu_deque.empty())
                         {
@@ -820,6 +892,7 @@ int main(int argc, char** argv)
                         bool imu_comes = time_current >= imu_next.header.stamp.toSec();
                         while (imu_comes) 
                         {
+                            // 5.1.2 若中间穿插 GNSS 观测，先推进到 GNSS 时刻，再做 GNSS 更新。
                             if (!p_gnss->gnss_msg.empty() && GNSS_ENABLE)
                             {   
                                 gnss_cur = p_gnss->gnss_msg.front();
@@ -963,8 +1036,9 @@ int main(int argc, char** argv)
                                     }
                                 }
                             }
+                            // 5.1.3 若中间穿插 NMEA 观测，同样先推进再更新。
                             if (!p_nmea->nmea_msg.empty() && NMEA_ENABLE)
-                            {   
+                            {
                                 //新增
                                 ROS_INFO("[DIAG] 进入 NMEA 处理, nmea_msg.size=%zu, nmea_ready=%d, frame_count=%d",
                                         p_nmea->nmea_msg.size(), p_nmea->nmea_ready, p_nmea->frame_count);
@@ -1083,6 +1157,7 @@ int main(int argc, char** argv)
                             {
                                 break;
                             }
+                            // 5.1.4 到达当前 IMU 时刻后，执行一次 IMU 预测 + IMU 更新。
                             angvel_avr<<imu_next.angular_velocity.x, imu_next.angular_velocity.y, imu_next.angular_velocity.z;
                             acc_avr   <<imu_next.linear_acceleration.x, imu_next.linear_acceleration.y, imu_next.linear_acceleration.z;
 
@@ -1110,6 +1185,7 @@ int main(int argc, char** argv)
                     {
                         break;
                     }
+                    // 5.1.5 当前点处理完后，再检查是否还有 GNSS 观测需要补入。
                     if (!p_gnss->gnss_msg.empty() && GNSS_ENABLE)
                     {
                         gnss_cur = p_gnss->gnss_msg.front();
@@ -1248,6 +1324,7 @@ int main(int argc, char** argv)
                             }
                         }
                     }
+                    // 5.1.6 当前点处理完后，再检查是否还有 NMEA 观测需要补入。
                     if (!p_nmea->nmea_msg.empty() && NMEA_ENABLE)
                     {
                         nmea_cur = p_nmea->nmea_msg.front();
@@ -1339,6 +1416,7 @@ int main(int argc, char** argv)
                     {
                         break;
                     }
+                    // 5.1.7 用当前点时刻做一次 LiDAR 匹配更新。
                     double dt = time_current - time_predict_last_const;
                     // double propag_state_start = omp_get_wtime();
                     if(!prop_at_freq_of_imu)
@@ -1376,7 +1454,7 @@ int main(int argc, char** argv)
                         
                     if (publish_odometry_without_downsample)
                     {
-                        /******* Publish odometry *******/
+                        // 6. 发布当前估计位姿，给 RViz 和外部模块看。
 
                         publish_odometry(pubOdomAftMapped);
                         if (runtime_pos_log)
@@ -1819,25 +1897,25 @@ int main(int argc, char** argv)
                 }
             }
             
-            /******* Publish odometry downsample *******/
+            // 7. 当前帧处理结束后，再统一发布一次里程计结果。
             if (!publish_odometry_without_downsample)
             {
                 publish_odometry(pubOdomAftMapped);
             }
 
-            /*** add the feature points to map ***/
+            // 把本帧有效特征点加入局部地图。
             if(feats_down_size > 4)
             {
                 MapIncremental();
             }
 
             t5 = omp_get_wtime();
-            /******* Publish points *******/
+            // 发布轨迹与点云结果，供 RViz / 记录文件使用。
             if (path_en)                         publish_path(pubPath);
             if (scan_pub_en || pcd_save_en)      publish_frame_world(pubLaserCloudFullRes);
             if (scan_pub_en && scan_body_pub_en) publish_frame_body(pubLaserCloudFullRes_body);
             
-            /*** Debug variables Logging ***/
+            // 记录运行耗时与调试日志。
             if (runtime_pos_log)
             {
                 frame_num ++;

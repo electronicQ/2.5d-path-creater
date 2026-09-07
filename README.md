@@ -51,6 +51,47 @@ python3 -m pip install -r requirements.txt
 
 以下命令默认从仓库根目录 `/home/cclg/muti_path_creater` 执行。
 
+### 快速命令清单
+
+先准备 ROS 环境：
+
+```bash
+source devel/setup.bash
+```
+
+建图阶段：
+
+```bash
+roslaunch gnss_to_enu gnss_to_enu_slam_banfu2_time_aligned.launch
+roslaunch ligo mapping_avia_handsfree.launch
+```
+
+地图转换及保存阶段：
+
+```bash
+roslaunch grid_map_pcl grid_map_pcl_loader_node.launch
+roslaunch grid_map_demos filters_demo_gai.launch
+python3 tools/pgm_saver/save_continuous_map.py -n banfu2
+```
+
+路径生成阶段：
+
+```bash
+python3 -m tools.path_creater.main
+```
+
+### 命令作用说明
+
+| 命令 | 作用 |
+| --- | --- |
+| `source devel/setup.bash` | 加载当前 catkin 工作区环境，让终端能找到本工程里的 ROS 包、launch 文件、节点和消息类型。 |
+| `roslaunch gnss_to_enu gnss_to_enu_slam_banfu2_time_aligned.launch` | 启动 GNSS 时间戳补偿和 GNSS 转 ENU 节点。该 launch 默认订阅 `/handsfree/rtk/gnss`，发布时间对齐后的 `/handsfree/rtk/gnss_time_aligned`，并进一步发布 ENU 里程计 `/rtk/gps_odom`。 |
+| `roslaunch ligo mapping_avia_handsfree.launch` | 启动 LIGO 建图节点，使用 `src/LIGO./config/avia_handsfree.yaml` 配置 Livox Avia + Handsfree RTK 数据，生成局部 ENU 点云地图。 |
+| `roslaunch grid_map_pcl grid_map_pcl_loader_node.launch` | 从 `map/pcd` 读取 `.pcd` 点云，默认自动选择最近修改的点云文件，转换成 `elevation` 高程 GridMap，并发布 `/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud`。 |
+| `roslaunch grid_map_demos filters_demo_gai.launch` | 对高程 GridMap 执行滤波链，生成坡度、粗糙度、边缘和 `traversability` 可通行层，并通过 `grid_map_visualization` 发布 `/grid_map_visualization/traversability_grid`。 |
+| `python3 tools/pgm_saver/save_continuous_map.py -n banfu2` | 订阅 `/grid_map_visualization/traversability_grid`，保存连续灰度静态地图到 `map/pgm/banfu2.pgm` 和 `map/pgm/banfu2.yaml`。`-n` 可以换成其他地图名。 |
+| `python3 -m tools.path_creater.main` | 读取 `tools/path_creater/config/config.yaml` 中配置的地图、ENU 原点、起点和终点，生成 `distance`、`smooth`、`cost_aware` 三类全局路径，并输出 CSV 和叠加图。 |
+
 ### 1. 准备 ROS 环境
 
 ```bash
@@ -59,7 +100,23 @@ source devel/setup.bash
 
 如果重新编译过 `src/grid_map`，先完成 catkin 构建，再重新 source。
 
-### 2. 点云转高程 GridMap
+### 2. GNSS 转 ENU 与 LIGO 建图
+
+终端 1：
+
+```bash
+roslaunch gnss_to_enu gnss_to_enu_slam_banfu2_time_aligned.launch
+```
+
+终端 2：
+
+```bash
+roslaunch ligo mapping_avia_handsfree.launch
+```
+
+这一步完成 GNSS 时间对齐、GNSS 经纬度到局部 ENU 的转换，以及 LIGO 点云建图。建图输出的 `.pcd` 点云建议放到 `map/pcd`，供后续地图转换使用。
+
+### 3. 点云转高程 GridMap
 
 ```bash
 roslaunch grid_map_pcl grid_map_pcl_loader_node.launch
@@ -80,7 +137,7 @@ roslaunch grid_map_pcl grid_map_pcl_loader_node.launch
 roslaunch grid_map_pcl grid_map_pcl_loader_node.launch pcd_filename:=changlilou_ENU.pcd
 ```
 
-### 3. 高程 GridMap 转可通行 GridMap 与 OccupancyGrid
+### 4. 高程 GridMap 转可通行 GridMap 与 OccupancyGrid
 
 ```bash
 roslaunch grid_map_demos filters_demo_gai.launch
@@ -99,19 +156,19 @@ roslaunch grid_map_demos filters_demo_gai.launch
 - `src/grid_map/grid_map_demos/config/filters_demo_filter_chain_gai.yaml`
 - `src/grid_map/grid_map_demos/config/filters_demo_gai.yaml`
 
-### 4. 保存连续静态地图
+### 5. 保存连续静态地图
 
 在 `/grid_map_visualization/traversability_grid` 已经发布后运行：
 
 ```bash
-python3 tools/pgm_saver/save_continuous_map.py -n example_map
+python3 tools/pgm_saver/save_continuous_map.py -n banfu2
 ```
 
 输出：
 
 ```text
-map/pgm/example_map.pgm
-map/pgm/example_map.yaml
+map/pgm/banfu2.pgm
+map/pgm/banfu2.yaml
 ```
 
 `-n` 只传裸文件名时默认保存到 `map/pgm`。如果传入 `custom/example_map` 这类显式相对路径，则按仓库根目录下的相对路径保存。
@@ -123,9 +180,9 @@ PGM 灰度语义：
 - OccupancyGrid `0` -> PGM `254`，最可通行
 - `1..99` -> 连续灰度代价
 
-### 5. 使用静态地图生成三条全局轨迹
+### 6. 使用静态地图生成三条全局轨迹
 
-先编辑 `config.yaml`，填入：
+先编辑 `tools/path_creater/config/config.yaml`，填入：
 
 - `map_yaml`：静态地图 `.yaml`
 - `map_meta`：该地图对应的局部 ENU 原点经纬高
@@ -135,7 +192,13 @@ PGM 灰度语义：
 然后运行：
 
 ```bash
-python3 -m tools.path_creater.main --config config.yaml
+python3 -m tools.path_creater.main
+```
+
+如果需要指定其他配置文件，可以运行：
+
+```bash
+python3 -m tools.path_creater.main --config tools/path_creater/config/config.yaml
 ```
 
 更多规划器细节见 `tools/path_creater/README.md`。
@@ -170,6 +233,17 @@ elevation NaN
 - `distance`：距离优先
 - `smooth`：转向更少、更平滑
 - `cost_aware`：更重视高灰度可通行区域和障碍物安全距离
+
+如果启用 `write_overlay`，会额外生成 `overlay.png`，用于在地图上查看三条轨迹和起终点：
+
+| 颜色 | 对应轨迹 | 含义 |
+| --- | --- | --- |
+| 红色 | `distance` | 距离优先，更偏向最短路径，只轻微考虑障碍距离和灰度代价。 |
+| 绿色 | `smooth` | 平滑优先，转弯惩罚更大，路径更倾向少折弯、更顺。 |
+| 蓝色 | `cost_aware` | 代价感知优先，强烈避开低灰度区域和靠近障碍的区域，通常更保守。 |
+| 黄色点 | 起点 | 规划起始位置。 |
+| 紫色点 | 终点 | 规划目标位置。 |
+| 变暗灰色区域 | 膨胀后不可通行区域 | 包含未知区、绝对障碍及其硬膨胀范围。 |
 
 每类轨迹输出两份 CSV：
 

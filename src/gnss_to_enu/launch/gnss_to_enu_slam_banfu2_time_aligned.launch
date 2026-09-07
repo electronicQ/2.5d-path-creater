@@ -1,3 +1,6 @@
+<!-- 启动 GNSS 时间戳补偿和 GNSS 转 ENU 节点。该 launch 默认订阅 /handsfree/rtk/gnss，
+发布时间对齐后的 /handsfree/rtk/gnss_time_aligned，并进一步发布 ENU 里程计 /rtk/gps_odom。 -->
+
 <launch>
     <param name="use_sim_time" value="false" />
 
@@ -25,7 +28,7 @@
         <param name="datum_lon" value="113.49363833" />
         <param name="datum_alt" value="4.89360000" />
 
-        <param name="min_T_intervel" value="1.0" />
-        <param name="min_D_interval" value="1.0" />
+        <param name="min_T_intervel" value="0.2" />
+        <param name="min_D_interval" value="0.0" />
     </node>
 </launch>
