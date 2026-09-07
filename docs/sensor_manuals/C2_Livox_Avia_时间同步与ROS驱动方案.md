@@ -8,15 +8,15 @@
 - 仅使用 C2 板卡 28 针引脚
 
 实现两件事：
-1. C2 通过串口输出 NMEA 语句，由电脑端 ROS 节点解析并发布 `sensor_msgs/NavSatFix`
+1. C2 通过板卡的usb口输出 NMEA 语句，由电脑端 ROS 节点解析并发布 `sensor_msgs/NavSatFix`
 2. C2 输出 PPS 与 UTC 时间，驱动 Livox Avia 实现绝对 UTC 时间同步
 
 ## 2. 结论
 
 该方案可行，推荐采用“两路串口 + 一路 PPS”的结构：
 
-- `COM3`：输出 `GPGGA + GPRMC`，供 GNSS ROS 驱动解析成 `NavSatFix`
-- `COM2`：只输出 `GPRMC`，供 `livox_ros_driver` 做 UTC 时间同步
+- `C2的COM3`：输出 `GPGGA + GPRMC`，供 GNSS ROS 驱动解析成 `NavSatFix`
+- `C2的COM4`：只输出 `GPRMC`，供 `livox_ros_driver` 做 UTC 时间同步
 - `PPS`：输出到 Livox Avia 同步口
 - 所有地线共地，串口电平按 3.3V LVTTL 处理
 
@@ -29,10 +29,10 @@
 
 ### 3.1 C2 侧引脚
 
-C2 手册中可用引脚包括：
-- `TXD2 / RXD2`：COM3
-- `TXD2 / RXD2`：COM2
-- `PPS`
+C2 板卡用到的引脚包括：
+- `usb口`： C2的COM3端口对应的串口转usb输入输出
+- `13号引脚`：C2的COM4端口输出对应的串口输出引脚TXD4
+- `23号引脚` ： PPS输出引脚
 - `GND`
 
 注意：
@@ -49,8 +49,8 @@ C2 手册中可用引脚包括：
 - C2 `GND` -> 电脑侧地
 
 #### 路线 B：Livox 时间同步
-- C2 `COM2 TXD2` -> USB-TTL -> 电脑
-- C2 `COM2 RXD2` -> USB-TTL -> 电脑
+- C2 `COM4 TXD2` -> USB-TTL -> 电脑
+- C2 `COM4 RXD2` -> USB-TTL -> 电脑
 - C2 `PPS` -> Livox Avia 同步输入
 - C2 `GND` -> Livox Avia 同步地
 - 电脑上运行 `livox_ros_driver`
@@ -78,7 +78,7 @@ LOG LOGLIST
 
 ```text
 INTERFACEMODE COM3 BYNAV BYNAV
-INTERFACEMODE COM2 BYNAV BYNAV
+INTERFACEMODE COM4 BYNAV BYNAV
 ```
 
 ### 4.2 语句输出
@@ -89,9 +89,9 @@ LOG COM3 GPGGA ONTIME 1
 LOG COM3 GPRMC ONTIME 1
 ```
 
-#### COM2（软件上的COM2，配置、显示等方面都对应COM2；接线的时候对应的是COM1串口）：给 Livox 时间同步
+#### COM4（软件上的COM4，配置、显示等方面都对应COM4；接线的时候对应的是COM1串口）：给 Livox 时间同步
 ```text
-LOG COM2 GPRMC ONTIME 1
+LOG COM4 GPRMC ONTIME 1
 ```
 
 ### 4.3 PPS 输出
@@ -113,14 +113,6 @@ SAVECONFIG
 - `GPGGA` 也建议先用 1Hz
 - 如后续确认链路稳定，可再按需要调整频率
 
-### 4.4 ======================当前板子输出=============================
-板子引脚和手册不对应：
-- 板子上13号引脚对应的是软件上的COM4 TX，现在要配置软件上的COM4端让他输出GPRMC语句，给激光雷达做同步
-```text
-LOG COM4 GPRMC ONTIME 1
-```
-
-然后将13号引脚解ttl转usb的
 
 ## 5. GNSS ROS 驱动
 
@@ -167,7 +159,7 @@ Livox ROS driver 会从 `timesync_config.device_name` 指定的串口设备中�
 ```
 
 说明：
-- `device_name` 改成实际连接 `COM2` 的设备名
+- `device_name` 改成实际连接 `C2的COM4` 的设备名
 - `baudrate_index: 6` 对应 115200
 - `parity_index: 0` 表示无校验
 

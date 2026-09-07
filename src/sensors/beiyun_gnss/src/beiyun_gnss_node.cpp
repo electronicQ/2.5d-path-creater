@@ -136,6 +136,7 @@ class BeiyunGnssNode {
  public:
   BeiyunGnssNode()
       : nh_(),
+        private_nh_("~"),
         port_("/dev/ttyUSB0"),
         baudrate_(115200),
         serial_timeout_(0.1),
@@ -146,22 +147,22 @@ class BeiyunGnssNode {
         has_rmc_(false),
         has_gga_(false) {
     // 私有参数允许在端口映射前后使用同一个程序，不需要重新编译。
-    nh_.param("~port", port_, port_);
-    nh_.param("~baudrate", baudrate_, baudrate_);
-    nh_.param("~serial_timeout", serial_timeout_, serial_timeout_);
-    nh_.param("~frame_id", frame_id_, frame_id_);
-    nh_.param("~navsatfix_topic", navsatfix_topic_, navsatfix_topic_);
-    nh_.param("~pair_tolerance_seconds", pair_tolerance_seconds_,
+    private_nh_.param("port", port_, port_);
+    private_nh_.param("baudrate", baudrate_, baudrate_);
+    private_nh_.param("serial_timeout", serial_timeout_, serial_timeout_);
+    private_nh_.param("frame_id", frame_id_, frame_id_);
+    private_nh_.param("navsatfix_topic", navsatfix_topic_, navsatfix_topic_);
+    private_nh_.param("pair_tolerance_seconds", pair_tolerance_seconds_,
               pair_tolerance_seconds_);
-    nh_.param("~single_point_covariance_m2",
+    private_nh_.param("single_point_covariance_m2",
               covariance_config_.single_point_covariance_m2,
               covariance_config_.single_point_covariance_m2);
-    nh_.param("~dgps_covariance_m2", covariance_config_.dgps_covariance_m2,
+    private_nh_.param("dgps_covariance_m2", covariance_config_.dgps_covariance_m2,
               covariance_config_.dgps_covariance_m2);
-    nh_.param("~rtk_fixed_covariance_m2",
+    private_nh_.param("rtk_fixed_covariance_m2",
               covariance_config_.rtk_fixed_covariance_m2,
               covariance_config_.rtk_fixed_covariance_m2);
-    nh_.param("~rtk_float_covariance_m2",
+    private_nh_.param("rtk_float_covariance_m2",
               covariance_config_.rtk_float_covariance_m2,
               covariance_config_.rtk_float_covariance_m2);
 
@@ -304,6 +305,7 @@ class BeiyunGnssNode {
 
   // ROS、串口和参数
   ros::NodeHandle nh_;
+  ros::NodeHandle private_nh_;
   SerialPort serial_;
   std::string port_;
   int baudrate_;
@@ -329,8 +331,15 @@ class BeiyunGnssNode {
 }  // namespace
 
 int main(int argc, char **argv) {
-  ros::init(argc, argv, "beiyun_gnss_node");
-  BeiyunGnssNode node;
-  node.Run();
-  return 0;
+  try {
+    ros::init(argc, argv, "beiyun_gnss_node");
+    BeiyunGnssNode node;
+    node.Run();
+    return 0;
+  } catch (const std::exception &e) {
+    fprintf(stderr, "beiyun_gnss_node terminated by exception: %s\n", e.what());
+  } catch (...) {
+    fprintf(stderr, "beiyun_gnss_node terminated by unknown exception\n");
+  }
+  return 1;
 }
