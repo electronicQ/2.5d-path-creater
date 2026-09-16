@@ -1,2 +1,0 @@
-KERNEL=="ttyUSB*", ATTRS{interface}=="CP2102 USB to UART Bridge Controller", MODE:="0777", SYMLINK+="HFRobotRTK"
-

@@ -2,10 +2,10 @@
 # 所有相对路径都以当前 config.yaml 所在目录为基准。
 
 # 静态栅格地图 yaml，内部引用同名或指定的 .pgm 图像。
-map_yaml: ../../../map/pgm/banfu2.yaml
+map_yaml: ../../../map/pgm/banfunew.yaml
 
 # 地图对应的 ENU 原点元数据，用于经纬度和局部 ENU 坐标互转。
-map_meta: banfu2.meta.yaml
+map_meta: banfunew.meta.yaml
 
 # 起点经纬高。规划器会先转换为 ENU，再映射到栅格坐标。
 start:
