@@ -2,27 +2,27 @@
 # 所有相对路径都以当前 config.yaml 所在目录为基准。
 
 # 静态栅格地图 yaml，内部引用同名或指定的 .pgm 图像。
-map_yaml: ../../../map/pgm/banfunew.yaml
+map_yaml: ../../../map/pgm/map_enu.yaml
 
 # 地图对应的 ENU 原点元数据，用于经纬度和局部 ENU 坐标互转。
-map_meta: banfunew.meta.yaml
+map_meta: map_enu.meta.yaml
 
 # 起点经纬高。规划器会先转换为 ENU，再映射到栅格坐标。
 start:
-  latitude: 22.39298349703113
-  longitude: 113.30857557406419
-  altitude: 38.19281114358455
+  latitude: 22.39758935
+  longitude: 113.30942461
+  altitude: 5.0
 
 # 终点经纬高。若起终点落在不可通行区域，程序会尝试自动吸附到附近可通行格。
 goal:
-  latitude: 22.395137269441996
-  longitude: 113.3102750046435
-  altitude: 38.18748848699033
+  latitude: 22.3972281
+  longitude: 113.3087518
+  altitude: 5.0
 
 # PGM 中表示未知区域的灰度值，未知区会被视为禁止通行。
 unknown_gray: 205
 
-# PGM 中小于等于该值的格子视为绝对障碍，禁止通行。
+# PGM 中小于等于该值的格子视为绝对障碍，禁止通行。90
 absolute_obstacle_gray: 90
 
 # 是否使用原始 PGM 连续灰度作为软代价；灰度越低，代价越高。

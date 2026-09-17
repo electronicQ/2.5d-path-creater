@@ -1,0 +1,9 @@
+# Vehicle gateway defaults. Set token and project_root for deployment.
+host: 0.0.0.0
+port: 19090
+# Replace this value before deployment.
+token: change-me
+max_frame_size: 8388608
+project_root: ../..
+data_root: var/vehicle_gateway
+job_timeout_s: 1800

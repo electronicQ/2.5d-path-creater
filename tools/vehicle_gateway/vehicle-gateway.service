@@ -1,0 +1,14 @@
+[Unit]
+Description=Vehicle map and path TCP gateway
+After=roscore.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/muti_path_creater
+ExecStart=/bin/bash -lc 'source devel/setup.bash && exec python3 -m tools.vehicle_gateway.main --config tools/vehicle_gateway/gateway.yaml'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@
   <arg name="prefix"                 default=""/>
   <arg name="set_verbosity_to_debug" default="false"/>
   <arg name="publish_point_cloud"    default="true"/>
+  <arg name="enable_rviz"             default="true" />
   
   <!--启动了一个grid_map_pcl_loader_node节点,也就是这个包中写的节点-->
   <node name="grid_map_pcl_loader_node" 
@@ -30,7 +31,7 @@
   </node>
   
   <!--启动了一个rviz节点-->
-  <node name="rviz_grid_map_pcl" pkg="rviz" type="rviz" args="-d $(find grid_map_pcl)/rviz/grid_map_vis.rviz" />
+  <node name="rviz_grid_map_pcl" pkg="rviz" type="rviz" args="-d $(find grid_map_pcl)/rviz/grid_map_vis.rviz" if="$(arg enable_rviz)" />
   
   <!--启动了一个点云发布节点-->
   <node name="point_cloud_publisher_node" 

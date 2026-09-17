@@ -1,267 +1,123 @@
 # muti_path_creater
 
-`muti_path_creater` 是一个从无人机点云地图生成静态连续栅格地图，并基于该地图生成多条全局轨迹的工程。
+本工程部署在移动车辆工控机上，负责把已有的局部 ENU 点云地图转换为二维栅格地图，并根据起点、目标点生成三组全局轨迹。当前分支不负责在线建图；点云、ENU 原点和规划参数由上位机通过 TCP 发送到车端。
 
-主目标不是重新完成 SLAM 建图，而是把已有的局部 ENU `.pcd` 点云地图处理成可规划的静态地图，并从同一起点到同一终点生成三条不同策略的全局路径。
-
-## 主流程
+## 端到端流程
 
 ```text
-无人机点云 .pcd
--> grid_map_pcl 生成 elevation 高程 GridMap
--> grid_map filter chain 生成 traversability 可通行层
--> grid_map_visualization 转为 nav_msgs/OccupancyGrid
--> tools/pgm_saver 保存连续灰度 .pgm + .yaml
--> tools/path_creater 读取静态地图并规划三条轨迹
--> 输出 ENU CSV 与经纬度 CSV
+上位机上传 PCD + ENU 原点
+-> 车端原子保存到 map/pcd 和 tools/path_creater/config
+-> grid_map_pcl 生成 elevation GridMap
+-> filter chain 生成 traversability
+-> pgm_saver 保存 PGM/YAML 栅格地图
+-> path_creater 根据经纬高起点/目标点规划
+-> 返回轨迹文件清单和状态
 ```
 
-## 目录结构
+车端同一时间只执行一个转换或规划任务。PCD 使用分块传输、块校验、完整 SHA-256 校验和断点续传。
+
+## 目录和关键文件
 
 | 路径 | 作用 |
 | --- | --- |
-| `src/grid_map/` | ROS/catkin 软件包，负责点云到高程地图、多层 GridMap、OccupancyGrid 的转换。 |
-| `src/grid_map/grid_map_pcl/` | 读取 `.pcd` 点云，生成 `elevation` 高程层。 |
-| `src/grid_map/grid_map_demos/` | 使用 filter chain 从高程层计算坡度、粗糙度、边缘和 `traversability`。 |
-| `src/grid_map/grid_map_visualization/` | 将 GridMap 层发布为可视化消息或 `nav_msgs/OccupancyGrid`。 |
-| `tools/pgm_saver/` | 订阅连续 OccupancyGrid 并保存为 `.pgm` 与 `.yaml`。 |
-| `tools/path_creater/` | ROS-independent 离线全局规划器，读取静态地图并输出三条轨迹。 |
-| `map/pcd/` | 建议存放原始或待处理点云地图。 |
-| `map/pgm/` | 建议存放已生成的静态 `.pgm` + `.yaml` 地图。 |
-| `output/` | 默认轨迹、叠加图和解析后配置输出目录。 |
-| `config.yaml` | 离线规划器的默认配置文件。 |
-| `docs/project-context.md` | 项目长期背景、坐标系和地图语义约定。 |
+| `tools/vehicle_gateway/` | TCP 网关、任务状态机、上传存储和流程编排。 |
+| `map/pcd/` | 活动点云目录，默认文件为 `scans_Global_ENU.pcd`。 |
+| `map/pgm/` | 转换后的 `.pgm` 和 `.yaml` 静态地图。 |
+| `tools/path_creater/config/map_enu.meta.yaml` | 活动地图的 ENU 原点经纬高。 |
+| `tools/path_creater/config/config.yaml` | 规划器配置。 |
+| `var/vehicle_gateway/` | 上传临时文件、任务目录、日志和 manifest。 |
 
-## 环境依赖
-
-ROS 部分依赖 catkin 工作区和 `grid_map` 相关 ROS 包。离线规划部分依赖 Python：
-
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-`requirements.txt` 当前包含：
-
-- `numpy`
-- `PyYAML`
-- `Pillow`
-- `scipy`
-
-## 执行流程
-
-以下命令默认从仓库根目录 `/home/cclg/muti_path_creater` 执行。
-
-### 快速命令清单
-
-先准备 ROS 环境：
+## 启动车端网关
 
 ```bash
 source devel/setup.bash
+python3 -m tools.vehicle_gateway.main \
+  --config tools/vehicle_gateway/gateway.yaml
 ```
 
-建图阶段：
+正式部署：
 
 ```bash
-roslaunch gnss_to_enu gnss_to_enu_slam_banfu2_time_aligned.launch
-roslaunch ligo mapping_avia_handsfree.launch
+sudo cp tools/vehicle_gateway/vehicle-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now vehicle-gateway.service
 ```
 
-地图转换及保存阶段：
+部署前修改 `tools/vehicle_gateway/gateway.yaml` 中的监听地址、端口和令牌。生产环境建议配置防火墙，仅允许上位机 IP 访问 TCP 端口。
+
+## TCP 操作顺序
+
+协议帧格式为网络字节序：
+
+```text
+uint32 frame_length
+uint32 json_header_length
+UTF-8 JSON header
+binary payload
+```
+
+主要消息为 `hello`、`map.upload.begin`、`map.upload.chunk`、`map.upload.commit`、`map.convert.start`、`plan.start`、`job.status`、`job.cancel`、`artifact.list` 和 `artifact.download`。TCP 不保证一次发送对应一次接收，客户端必须按长度读取完整帧。
+
+### 1. 上传 PCD 和 ENU 原点
+
+`map.upload.begin` 携带 `map_id`、`pcd_name`、`file_size`、完整 SHA-256 和 `enu_origin`。随后发送多个 `map.upload.chunk`，二进制内容放在 payload，JSON 头携带 `offset` 和可选块 SHA-256。车端响应 `next_offset`，断线后重新 begin 即可续传。
+
+提交 `map.upload.commit` 后，车端校验完整文件和 PCD 头，并原子更新：
+
+```text
+map/pcd/scans_Global_ENU.pcd
+tools/path_creater/config/map_enu.meta.yaml
+```
+
+### 2. 转换并保存 PGM 地图
+
+发送 `map.convert.start`，携带 `map_id`、`pcd_name` 和 `pgm_name`。车端无 RViz 执行：
 
 ```bash
-roslaunch grid_map_pcl grid_map_pcl_loader_node.launch
-roslaunch grid_map_demos filters_demo_gai.launch
-python3 tools/pgm_saver/save_continuous_map.py -n banfu2
+roslaunch grid_map_pcl grid_map_pcl_loader_node.launch pcd_filename:=scans_Global_ENU.pcd enable_rviz:=false
+roslaunch grid_map_demos filters_demo_gai.launch enable_rviz:=false
+python3 tools/pgm_saver/save_continuous_map.py -n <任务临时目录>/campus
 ```
 
-路径生成阶段：
+成功后生成 `map/pgm/campus.pgm` 和 `map/pgm/campus.yaml`，服务端会检查话题、输出并回收 ROS 进程组。
 
-```bash
-python3 -m tools.path_creater.main
+### 3. 开始规划
+
+`plan.start` 携带 `map_id`、`pgm_name`、`start`、`goal` 和可选白名单 `config_overrides`。车端执行 `python3 -m tools.path_creater.main --config tools/path_creater/config/config.yaml`。结果通过 `job.status` 和 `artifact.list` 返回路径、大小和 SHA-256：
+
+```text
+traj_distance_geo.csv    traj_distance_enu.csv
+traj_smooth_geo.csv      traj_smooth_enu.csv
+traj_cost_aware_geo.csv  traj_cost_aware_enu.csv
+overlay.png              config.resolved.yaml
 ```
 
-### 命令作用说明
+## 状态和错误
 
-| 命令 | 作用 |
-| --- | --- |
-| `source devel/setup.bash` | 加载当前 catkin 工作区环境，让终端能找到本工程里的 ROS 包、launch 文件、节点和消息类型。 |
-| `roslaunch gnss_to_enu gnss_to_enu_slam_banfu2_time_aligned.launch` | 启动 GNSS 时间戳补偿和 GNSS 转 ENU 节点。该 launch 默认订阅 `/handsfree/rtk/gnss`，发布时间对齐后的 `/handsfree/rtk/gnss_time_aligned`，并进一步发布 ENU 里程计 `/rtk/gps_odom`。 |
-| `roslaunch ligo mapping_avia_handsfree.launch` | 启动 LIGO 建图节点，使用 `src/LIGO./config/avia_handsfree.yaml` 配置 Livox Avia + Handsfree RTK 数据，生成局部 ENU 点云地图。 |
-| `roslaunch grid_map_pcl grid_map_pcl_loader_node.launch` | 从 `map/pcd` 读取 `.pcd` 点云，默认自动选择最近修改的点云文件，转换成 `elevation` 高程 GridMap，并发布 `/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud`。 |
-| `roslaunch grid_map_demos filters_demo_gai.launch` | 对高程 GridMap 执行滤波链，生成坡度、粗糙度、边缘和 `traversability` 可通行层，并通过 `grid_map_visualization` 发布 `/grid_map_visualization/traversability_grid`。 |
-| `python3 tools/pgm_saver/save_continuous_map.py -n banfu2` | 订阅 `/grid_map_visualization/traversability_grid`，保存连续灰度静态地图到 `map/pgm/banfu2.pgm` 和 `map/pgm/banfu2.yaml`。`-n` 可以换成其他地图名。 |
-| `python3 -m tools.path_creater.main` | 读取 `tools/path_creater/config/config.yaml` 中配置的地图、ENU 原点、起点和终点，生成 `distance`、`smooth`、`cost_aware` 三类全局路径，并输出 CSV 和叠加图。 |
+典型状态：`UPLOADING -> READY -> CONVERTING -> MAP_READY -> PLANNING -> SUCCEEDED`。失败进入 `FAILED`，常见错误码包括 `INVALID_ARGUMENT`、`CHECKSUM_MISMATCH`、`BUSY`、`FILE_NOT_FOUND`、`ROS_UNAVAILABLE`、`MAP_TOPIC_TIMEOUT`、`PROCESS_FAILED`、`OUTPUT_INVALID`、`PLANNER_FAILED`、`JOB_TIMEOUT` 和 `JOB_CANCELLED`。任务执行期间新任务返回 `BUSY`，可发送 `job.cancel`。
 
-### 1. 准备 ROS 环境
+## 手动调试
 
 ```bash
 source devel/setup.bash
-```
-
-如果重新编译过 `src/grid_map`，先完成 catkin 构建，再重新 source。
-
-### 2. GNSS 转 ENU 与 LIGO 建图
-
-终端 1：
-
-```bash
-roslaunch gnss_to_enu gnss_to_enu_slam_banfu2_time_aligned.launch
-```
-
-终端 2：
-
-```bash
-roslaunch ligo mapping_avia_handsfree.launch
-```
-
-这一步完成 GNSS 时间对齐、GNSS 经纬度到局部 ENU 的转换，以及 LIGO 点云建图。建图输出的 `.pcd` 点云建议放到 `map/pcd`，供后续地图转换使用。
-
-### 3. 点云转高程 GridMap
-
-```bash
-roslaunch grid_map_pcl grid_map_pcl_loader_node.launch
-```
-
-默认配置：
-
-- launch 文件：`src/grid_map/grid_map_pcl/launch/grid_map_pcl_loader_node.launch`
-- 点云参数：`src/grid_map/grid_map_pcl/config/parameters.yaml`
-- 默认点云目录：`map/pcd`
-- 默认点云文件：`auto`，自动选择 `map/pcd` 中最近修改的 `.pcd`
-- 输出话题：`/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud`
-- 默认层名：`elevation`
-
-常用覆盖参数示例：
-
-```bash
-roslaunch grid_map_pcl grid_map_pcl_loader_node.launch pcd_filename:=changlilou_ENU.pcd
-```
-
-### 4. 高程 GridMap 转可通行 GridMap 与 OccupancyGrid
-
-```bash
-roslaunch grid_map_demos filters_demo_gai.launch
-```
-
-这一步会：
-
-- 订阅 `/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud`
-- 发布 `/grid_map_filter_demo/filtered_map`
-- 使用 filter chain 计算 `slope`、`roughness`、`edges`、`traversability`
-- 通过 `grid_map_visualization` 发布 `/grid_map_visualization/traversability_grid`
-
-相关文件：
-
-- `src/grid_map/grid_map_demos/launch/filters_demo_gai.launch`
-- `src/grid_map/grid_map_demos/config/filters_demo_filter_chain_gai.yaml`
-- `src/grid_map/grid_map_demos/config/filters_demo_gai.yaml`
-
-### 5. 保存连续静态地图
-
-在 `/grid_map_visualization/traversability_grid` 已经发布后运行：
-
-```bash
-python3 tools/pgm_saver/save_continuous_map.py -n banfu2
-```
-
-输出：
-
-```text
-map/pgm/banfu2.pgm
-map/pgm/banfu2.yaml
-```
-
-`-n` 只传裸文件名时默认保存到 `map/pgm`。如果传入 `custom/example_map` 这类显式相对路径，则按仓库根目录下的相对路径保存。
-
-PGM 灰度语义：
-
-- OccupancyGrid `-1` -> PGM `205`，未知区域
-- OccupancyGrid `100` -> PGM `0`，不可通行或高占据
-- OccupancyGrid `0` -> PGM `254`，最可通行
-- `1..99` -> 连续灰度代价
-
-### 6. 使用静态地图生成三条全局轨迹
-
-先编辑 `tools/path_creater/config/config.yaml`，填入：
-
-- `map_yaml`：静态地图 `.yaml`
-- `map_meta`：该地图对应的局部 ENU 原点经纬高
-- `start` / `goal`：起终点经纬度
-- `unknown_gray`、`absolute_obstacle_gray` 和三组 planner 权重
-
-然后运行：
-
-```bash
+roslaunch grid_map_pcl grid_map_pcl_loader_node.launch enable_rviz:=false
+roslaunch grid_map_demos filters_demo_gai.launch enable_rviz:=false
+python3 tools/pgm_saver/save_continuous_map.py -n campus
 python3 -m tools.path_creater.main
 ```
 
-如果需要指定其他配置文件，可以运行：
+## 坐标和地图语义
 
-```bash
-python3 -m tools.path_creater.main --config tools/path_creater/config/config.yaml
-```
+工程同时使用经纬高、局部 ENU 米制坐标和 PGM 栅格索引，不能混用。规划器将经纬高起点、目标点转换为 ENU 和栅格坐标，输出经纬度 CSV 与 ENU CSV。
 
-更多规划器细节见 `tools/path_creater/README.md`。
+- PGM `205`：未知区域，禁止通行；
+- PGM `<= 90`：绝对障碍；
+- 其他有效灰度：连续通行代价，灰度越大代价越低。
 
-## 坐标系约定
+未观测区域必须保持：`elevation NaN -> traversability NaN -> OccupancyGrid -1 -> PGM 205`。
 
-工程内同时存在三类坐标，不能混用：
+详细规划参数见 [`tools/path_creater/README.md`](tools/path_creater/README.md)，网关细节见 [`tools/vehicle_gateway/README.md`](tools/vehicle_gateway/README.md)，长期约定见 [`docs/project-context.md`](docs/project-context.md)。
 
-- 经纬度：`latitude, longitude, altitude`
-- 局部 ENU：`x, y, z`，单位为米
-- 栅格索引：`row, col`
+上位机的安装、运行和打包说明见 [`tools/ground_station/README.md`](tools/ground_station/README.md)。
 
-点云和静态地图使用局部 ENU 坐标。用户输入的起点和终点使用经纬度，规划器内部转换为 ENU 和栅格索引，最终同时输出经纬度轨迹和 ENU 轨迹。
-
-## 未知区域约定
-
-点云未观测区域必须保持未知语义：
-
-```text
-elevation NaN
--> traversability NaN
--> OccupancyGrid -1
--> PGM gray 205
-```
-
-后续如果需要补洞，只应作为显式、可配置的规划前处理步骤；默认不允许把未知区域当作自由空间。
-
-## 轨迹输出
-
-离线规划器默认生成三类轨迹：
-
-- `distance`：距离优先
-- `smooth`：转向更少、更平滑
-- `cost_aware`：更重视高灰度可通行区域和障碍物安全距离
-
-如果启用 `write_overlay`，会额外生成 `overlay.png`，用于在地图上查看三条轨迹和起终点：
-
-| 颜色 | 对应轨迹 | 含义 |
-| --- | --- | --- |
-| 红色 | `distance` | 距离优先，更偏向最短路径，只轻微考虑障碍距离和灰度代价。 |
-| 绿色 | `smooth` | 平滑优先，转弯惩罚更大，路径更倾向少折弯、更顺。 |
-| 蓝色 | `cost_aware` | 代价感知优先，强烈避开低灰度区域和靠近障碍的区域，通常更保守。 |
-| 黄色点 | 起点 | 规划起始位置。 |
-| 紫色点 | 终点 | 规划目标位置。 |
-| 变暗灰色区域 | 膨胀后不可通行区域 | 包含未知区、绝对障碍及其硬膨胀范围。 |
-
-每类轨迹输出两份 CSV：
-
-```text
-traj_distance_geo.csv
-traj_distance_enu.csv
-traj_smooth_geo.csv
-traj_smooth_enu.csv
-traj_cost_aware_geo.csv
-traj_cost_aware_enu.csv
-```
-
-`*_geo.csv` 用于后续循迹或跨 ENU 原点使用，`*_enu.csv` 用于地图对齐、调试和复现。
-
-规划器会先去除栅格 A* 的冗余折点，再对路径做安全圆角曲线平滑，并按配置的间隔采样保存轨迹点。默认采样间隔为 `1.0 m`，曲线采样过程不会穿越未知区、障碍区或障碍膨胀区。
-
-## 维护提示
-
-- 根目录 README 只描述整个工程和端到端流程。
-- `tools/path_creater/README.md` 只描述离线轨迹生成工具。
-- `docs/project-context.md` 保存长期约定，涉及坐标系、未知区域和地图语义时优先参考它。
+地面端对接公司使用的正式 TCP 应用层协议见 [`docs/vehicle_gateway_protocol.md`](docs/vehicle_gateway_protocol.md)，其中包含帧结构、JSON 字段、PCD 上传、地图转换、路径规划、状态反馈、结果下载和错误码。

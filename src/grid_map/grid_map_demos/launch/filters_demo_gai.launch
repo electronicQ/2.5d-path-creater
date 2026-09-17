@@ -1,5 +1,7 @@
 <launch>
 
+  <arg name="enable_rviz" default="true" />
+
   <!-- Launch the grid map filters demo node. -->
   <node pkg="grid_map_demos" type="filters_demo" name="grid_map_filter_demo" output="screen">
     <!-- Input topic -->
@@ -20,5 +22,5 @@
 
 
   <!-- Launch RViz with the demo configuration. -->
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find grid_map_demos)/rviz/filters_demo.rviz" />
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find grid_map_demos)/rviz/filters_demo.rviz" if="$(arg enable_rviz)" />
 </launch>
