@@ -114,7 +114,7 @@ traj_smooth_geo.csv         traj_smooth_enu.csv
 traj_cost_aware_geo.csv     traj_cost_aware_enu.csv
 ```
 
-如果生成，还会记录 `overlay.png` 和 `config.resolved.yaml`。最终创建 `manifest.json`，记录结果文件相对路径、大小和 SHA-256。地面端先调用 `artifact.list`，再通过 `artifact.download` 分块下载；网关只允许下载 manifest 中且位于任务目录内的文件。
+如果生成，还会记录 `road_map_distance.xml`、`road_map_smooth.xml`、`road_map_cost_aware.xml`、`overlay.png` 和 `config.resolved.yaml`。最终创建 `manifest.json`，记录结果文件相对路径、大小和 SHA-256。地面端先调用 `artifact.list`，再通过 `artifact.download` 分块下载；网关只允许下载 manifest 中且位于任务目录内的文件。
 
 ## 6. 任务互斥和状态
 

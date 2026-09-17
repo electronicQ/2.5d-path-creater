@@ -13,13 +13,13 @@ import yaml
 from .auto_endpoints import resolve_endpoints
 from .clearance import build_clearance_from_free
 from .curve_smoothing import CurveSmoothingConfig, smooth_and_sample_path
-from .geo import GeoPoint, enu_to_geodetic, geodetic_to_enu
+from .geo import GeoPoint, enu_to_geodetic, geodetic_to_enu, geodetic_to_local_utm
 from .map_loader import load_map
 from .map_metadata import load_map_metadata
 from .map_semantics import MapSemantics, build_semantic_layers
 from .path_smoothing import shortcut_path
 from .planner import plan_mode
-from .trajectory import write_enu_csv, write_geo_csv, write_overlay
+from .trajectory import write_enu_csv, write_geo_csv, write_overlay, write_road_map_xml
 from .timing import format_duration
 
 
@@ -232,23 +232,29 @@ def main(argv: Optional[list] = None) -> int:
         write_start = time.perf_counter()
         paths[mode] = [omap.world_to_grid(x, y) for x, y in enu_points]
         geo_points = [enu_to_geodetic(x, y, 0.0, map_meta.enu_origin) for x, y in enu_points]
+        local_utm_points = [
+            geodetic_to_local_utm(point, map_meta.enu_origin)[:2]
+            for point in geo_points
+        ]
         enu_path = out_dir / "traj_{}_enu.csv".format(mode)
         geo_path = out_dir / "traj_{}_geo.csv".format(mode)
+        road_map_path = out_dir / "road_map_{}.xml".format(mode)
         write_enu_csv(enu_path, enu_points)
         write_geo_csv(geo_path, geo_points)
+        write_road_map_xml(road_map_path, local_utm_points)
         write_elapsed = time.perf_counter() - write_start
         mode_elapsed = time.perf_counter() - mode_start
 
         if curve_cfg.enabled:
             print(
-                "  {} raw waypoints -> {} shortcut waypoints -> {} sampled curve points → {}, {}".format(
-                    raw_len, shortcut_len, len(enu_points), geo_path, enu_path
+                "  {} raw waypoints -> {} shortcut waypoints -> {} sampled curve points → {}, {}, {}".format(
+                    raw_len, shortcut_len, len(enu_points), geo_path, enu_path, road_map_path
                 )
             )
         elif smooth_paths:
-            print("  {} raw waypoints -> {} shortcut waypoints → {}, {}".format(raw_len, shortcut_len, geo_path, enu_path))
+            print("  {} raw waypoints -> {} shortcut waypoints → {}, {}, {}".format(raw_len, shortcut_len, geo_path, enu_path, road_map_path))
         else:
-            print("  {} waypoints → {}, {}".format(len(enu_points), geo_path, enu_path))
+            print("  {} waypoints → {}, {}, {}".format(len(enu_points), geo_path, enu_path, road_map_path))
         print(
             "  timing: astar={}, shortcut={}, curve={}, write={}, total={}".format(
                 format_duration(plan_elapsed),

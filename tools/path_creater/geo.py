@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -82,3 +83,39 @@ def enu_to_geodetic(x: float, y: float, z: float, origin: GeoPoint) -> GeoPoint:
     )
     dz = math.cos(lat0) * y + math.sin(lat0) * z
     return _ecef_to_geodetic(x0 + dx, y0 + dy, z0 + dz)
+
+
+def _utm_zone(longitude: float) -> int:
+    """Return the standard WGS84 UTM zone for a longitude."""
+    if not -180.0 <= longitude <= 180.0:
+        raise ValueError("longitude must be in [-180, 180]")
+    # Longitude 180 belongs to the last UTM zone instead of overflowing to 61.
+    return min(60, int(math.floor((longitude + 180.0) / 6.0)) + 1)
+
+
+@lru_cache(maxsize=120)
+def _utm_transformer(epsg: int):
+    try:
+        from pyproj import Transformer
+    except ImportError as exc:  # pragma: no cover - exercised in deployment environments
+        raise RuntimeError("pyproj is required for local UTM trajectory output") from exc
+    return Transformer.from_crs("EPSG:4326", "EPSG:{0}".format(epsg), always_xy=True)
+
+
+def geodetic_to_local_utm(point: GeoPoint, origin: GeoPoint) -> Tuple[float, float, float]:
+    """Convert WGS84 coordinates to UTM offsets from the UTM origin.
+
+    The UTM zone and hemisphere are selected from ``origin``.  The returned
+    easting/northing are therefore local UTM coordinates whose origin is the
+    supplied ENU origin; altitude is relative to the same origin altitude.
+    """
+    zone = _utm_zone(origin.longitude)
+    epsg = (32600 if origin.latitude >= 0.0 else 32700) + zone
+    transformer = _utm_transformer(epsg)
+    origin_easting, origin_northing = transformer.transform(origin.longitude, origin.latitude)
+    easting, northing = transformer.transform(point.longitude, point.latitude)
+    return (
+        float(easting - origin_easting),
+        float(northing - origin_northing),
+        float(point.altitude - origin.altitude),
+    )

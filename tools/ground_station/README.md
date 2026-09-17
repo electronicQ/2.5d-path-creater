@@ -29,7 +29,7 @@ python3 -m tools.ground_station.main
 1. 在“地图上传”页选择 `.pcd`，填写地图 ID 和 ENU 原点，上传完成后等待 `READY`。
 2. 在“地图转换”页填写 PGM 名称，启动转换并等待 `MAP_READY`。
 3. 在“路径规划”页填写 PGM 名称、起点、目标点和高级 JSON 参数。
-4. 规划成功后，上位机会自动下载轨迹 CSV、`overlay.png` 和解析配置到 `~/vehicle_ground_station/jobs/<job_id>/`。
+4. 规划成功后，上位机会自动下载轨迹 CSV、三个 `road_map_*.xml`、`overlay.png` 和解析配置到 `~/vehicle_ground_station/jobs/<job_id>/`。
 
 点云和结果文件均支持断点续传；文件完成后会校验 SHA-256。服务端仍会做最终路径、参数和权限校验。
 

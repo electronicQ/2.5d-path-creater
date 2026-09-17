@@ -1,14 +1,17 @@
 import asyncio
 import hashlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
 from tools.vehicle_gateway.configuration import apply_overrides
 from tools.vehicle_gateway.protocol import decode_frame, encode_frame, read_frame
 from tools.vehicle_gateway.service import GatewayConfig, GatewayServer
+from tools.vehicle_gateway.runner import PipelineRunner
 from tools.vehicle_gateway.storage import GatewayPaths, UploadStore
 from tools.vehicle_gateway.validation import safe_basename
 
@@ -92,6 +95,34 @@ class GatewayConfigTest(unittest.TestCase):
                 "start": {"latitude": 30, "longitude": 120}, "goal": {"latitude": 30, "longitude": 120},
                 "config_overrides": {"shell": "rm -rf /"},
             }, "campus", "output")
+
+
+class GatewayRunnerTest(unittest.TestCase):
+    def test_plan_includes_local_utm_road_map_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "job" / "output"
+            output.mkdir(parents=True)
+            required = [
+                "traj_distance_geo.csv", "traj_distance_enu.csv", "traj_smooth_geo.csv",
+                "traj_smooth_enu.csv", "traj_cost_aware_geo.csv", "traj_cost_aware_enu.csv",
+            ]
+            for name in required + [
+                "road_map_distance.xml", "road_map_smooth.xml", "road_map_cost_aware.xml",
+                "overlay.png", "config.resolved.yaml",
+            ]:
+                (output / name).write_text("output", encoding="utf-8")
+            log_path = root / "job.log"
+            completed = subprocess.CompletedProcess([], 0)
+            with mock.patch("tools.vehicle_gateway.runner.subprocess.run", return_value=completed):
+                artifacts = PipelineRunner(root).plan(root / "config.yaml", output, log_path)
+            self.assertEqual(
+                set(artifacts),
+                set(required + [
+                    "road_map_distance.xml", "road_map_smooth.xml", "road_map_cost_aware.xml",
+                    "overlay.png", "config.resolved.yaml",
+                ]),
+            )
 
 
 class GatewayServerTest(unittest.IsolatedAsyncioTestCase):

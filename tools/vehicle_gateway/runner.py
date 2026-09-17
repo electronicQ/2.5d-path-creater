@@ -95,6 +95,7 @@ class PipelineRunner:
         names = [
             "traj_distance_geo.csv", "traj_distance_enu.csv", "traj_smooth_geo.csv",
             "traj_smooth_enu.csv", "traj_cost_aware_geo.csv", "traj_cost_aware_enu.csv",
+            "road_map_distance.xml", "road_map_smooth.xml", "road_map_cost_aware.xml",
             "overlay.png", "config.resolved.yaml",
         ]
         artifacts = {name: str(output_dir / name) for name in names if (output_dir / name).is_file()}

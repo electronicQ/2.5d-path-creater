@@ -21,6 +21,9 @@ output/traj_smooth_geo.csv
 output/traj_smooth_enu.csv
 output/traj_cost_aware_geo.csv
 output/traj_cost_aware_enu.csv
+output/road_map_distance.xml
+output/road_map_smooth.xml
+output/road_map_cost_aware.xml
 output/overlay.png
 output/config.resolved.yaml
 ```
@@ -29,6 +32,16 @@ CSV 格式：
 
 - `*_geo.csv`：`latitude,longitude`
 - `*_enu.csv`：`x,y`
+- `road_map_<mode>.xml`：与 ENU 原点一致的局部 UTM 轨迹，使用 `road_map.xml` 的 `map/vertex` 结构，只包含轨迹点。
+
+局部 UTM 坐标的定义为：
+
+```text
+local_x = UTM_easting(point) - UTM_easting(ENU_origin)
+local_y = UTM_northing(point) - UTM_northing(ENU_origin)
+```
+
+UTM 分区和南北半球根据 ENU 原点选择，XML 中的 `x`、`y` 单位为米，`yaw` 单位为弧度。三种规划策略分别写入 `road_map_distance.xml`、`road_map_smooth.xml` 和 `road_map_cost_aware.xml`。
 
 默认会对 A* 输出先做直线可视化 shortcut，再做安全圆角曲线平滑，并按固定间隔采样；CSV 中保存的是最终采样点。
 

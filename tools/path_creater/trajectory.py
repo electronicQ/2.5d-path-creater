@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import math
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
@@ -60,6 +61,57 @@ def write_geo_csv(path: Path, points: Iterable[GeoPoint]) -> None:
         writer.writerow(["latitude", "longitude"])
         for point in points:
             writer.writerow(["{:.8f}".format(point.latitude), "{:.8f}".format(point.longitude)])
+
+
+def write_road_map_xml(path: Path, points: Sequence[Tuple[float, float]]) -> None:
+    """Write local UTM points as vertex-only ``road_map.xml`` content.
+
+    Yaw is expressed in radians and follows the next segment, with the final
+    point reusing the previous segment direction.  The consumer's requested
+    format contains only the map root and vertex elements; edge/type elements
+    are intentionally omitted.
+    """
+    root = ET.Element("map", {"generator": "path creater", "upload": "true", "version": "0.6"})
+    yaws = []
+    for index, point in enumerate(points):
+        if len(points) < 2:
+            yaw = 0.0
+        elif index + 1 < len(points):
+            next_x, next_y = points[index + 1]
+            yaw = math.atan2(next_y - point[1], next_x - point[0])
+        else:
+            previous_x, previous_y = points[index - 1]
+            yaw = math.atan2(point[1] - previous_y, point[0] - previous_x)
+        yaws.append(yaw)
+
+    for index, ((x, y), yaw) in enumerate(zip(points, yaws)):
+        ET.SubElement(
+            root,
+            "vertex",
+            {
+                "id": "{:04d}".format(index),
+                "x": "{:.6f}".format(float(x)),
+                "y": "{:.6f}".format(float(y)),
+                "yaw": "{:.6f}".format(yaw),
+                "Name": "----",
+            },
+        )
+    _indent_xml(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tree = ET.ElementTree(root)
+    tree.write(path, encoding="UTF-8", xml_declaration=True)
+
+
+def _indent_xml(element: ET.Element, level: int = 0) -> None:
+    """Pretty-print an ElementTree without requiring Python 3.9's ET.indent."""
+    indent = "\n" + "  " * level
+    children = list(element)
+    if not children:
+        return
+    element.text = indent + "  "
+    for index, child in enumerate(children):
+        _indent_xml(child, level + 1)
+        child.tail = indent + ("  " if index + 1 < len(children) else "")
 
 
 def write_overlay(

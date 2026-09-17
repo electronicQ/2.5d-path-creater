@@ -325,7 +325,7 @@ curve_smoothing.safety_check_step_m
 planners.distance/smooth/cost_aware 的 w_turn、w_clear、w_gray
 ```
 
-车端执行 `python3 -m tools.path_creater.main`，成功后生成六个轨迹 CSV，以及 `overlay.png` 和 `config.resolved.yaml`。
+车端执行 `python3 -m tools.path_creater.main`，成功后生成六个轨迹 CSV、三个局部 UTM `road_map_*.xml` 文件，以及 `overlay.png` 和 `config.resolved.yaml`。XML 文件分别为 `road_map_distance.xml`、`road_map_smooth.xml` 和 `road_map_cost_aware.xml`，每个文件只包含 `<map>` 根节点和 `<vertex>` 轨迹点，坐标原点与 ENU 原点一致。
 
 ## 10. 任务状态查询和推送
 
