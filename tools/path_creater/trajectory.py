@@ -64,12 +64,12 @@ def write_geo_csv(path: Path, points: Iterable[GeoPoint]) -> None:
 
 
 def write_road_map_xml(path: Path, points: Sequence[Tuple[float, float]]) -> None:
-    """Write local UTM points as vertex-only ``road_map.xml`` content.
+    """Write local UTM points using the project's ``road_map.xml`` schema.
 
-    Yaw is expressed in radians and follows the next segment, with the final
-    point reusing the previous segment direction.  The consumer's requested
-    format contains only the map root and vertex elements; edge/type elements
-    are intentionally omitted.
+    The first vertex is marked as type ``0`` (start), subsequent vertices as
+    type ``2`` (ordinary path points), and consecutive vertices are connected
+    by directed edges.  Yaw is expressed in radians and follows the next
+    segment, with the final point reusing the previous segment direction.
     """
     root = ET.Element("map", {"generator": "path creater", "upload": "true", "version": "0.6"})
     yaws = []
@@ -96,6 +96,27 @@ def write_road_map_xml(path: Path, points: Sequence[Tuple[float, float]]) -> Non
                 "Name": "----",
             },
         )
+    for index in range(max(0, len(points) - 1)):
+        ET.SubElement(
+            root,
+            "edge",
+            {
+                "id": "{:04d}".format(index),
+                "src_id": str(index),
+                "dst_id": str(index + 1),
+            },
+        )
+    for index in range(len(points)):
+        ET.SubElement(
+            root,
+            "type",
+            {
+                "id": "{:04d}".format(index),
+                "vertexId": "{:04d}".format(index),
+                "type": "0" if index == 0 else "2",
+            },
+        )
+
     _indent_xml(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     tree = ET.ElementTree(root)

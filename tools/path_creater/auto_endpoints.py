@@ -128,8 +128,10 @@ def resolve_endpoints(
     if start_xy is not None and goal_xy is not None:
         sr, sc = omap.world_to_grid(float(start_xy[0]), float(start_xy[1]))
         gr, gc = omap.world_to_grid(float(goal_xy[0]), float(goal_xy[1]))
-        if not omap.in_bounds(sr, sc) or not omap.in_bounds(gr, gc):
-            raise ValueError("Configured start/goal outside map bounds.")
+        if not omap.in_bounds(sr, sc):
+            raise ValueError("Configured start outside map bounds.")
+        if not omap.in_bounds(gr, gc):
+            raise ValueError("Configured goal outside map bounds.")
         if not clearance.free[sr, sc]:
             raise ValueError("Configured start is in inflated obstacle / non-free cell.")
         if not clearance.free[gr, gc]:

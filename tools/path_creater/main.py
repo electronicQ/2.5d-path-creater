@@ -23,6 +23,16 @@ from .trajectory import write_enu_csv, write_geo_csv, write_overlay, write_road_
 from .timing import format_duration
 
 
+# Stable filenames used by downstream vehicle software.  The numbering is
+# part of the external interface and intentionally differs from planner mode
+# iteration order: 1=cost-aware, 2=distance, 3=smooth.
+ROAD_MAP_FILENAMES = {
+    "cost_aware": "road_map1.xml",
+    "distance": "road_map2.xml",
+    "smooth": "road_map3.xml",
+}
+
+
 def default_config_path() -> Path:
     return Path(__file__).resolve().parent / "config" / "config.yaml"
 
@@ -238,7 +248,11 @@ def main(argv: Optional[list] = None) -> int:
         ]
         enu_path = out_dir / "traj_{}_enu.csv".format(mode)
         geo_path = out_dir / "traj_{}_geo.csv".format(mode)
-        road_map_path = out_dir / "road_map_{}.xml".format(mode)
+        try:
+            road_map_name = ROAD_MAP_FILENAMES[mode]
+        except KeyError as exc:
+            raise ValueError("unsupported planner mode for road map output: {}".format(mode)) from exc
+        road_map_path = out_dir / road_map_name
         write_enu_csv(enu_path, enu_points)
         write_geo_csv(geo_path, geo_points)
         write_road_map_xml(road_map_path, local_utm_points)

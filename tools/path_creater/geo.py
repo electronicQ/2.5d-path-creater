@@ -102,6 +102,15 @@ def _utm_transformer(epsg: int):
     return Transformer.from_crs("EPSG:4326", "EPSG:{0}".format(epsg), always_xy=True)
 
 
+@lru_cache(maxsize=120)
+def _geographic_transformer_from_utm(epsg: int):
+    try:
+        from pyproj import Transformer
+    except ImportError as exc:  # pragma: no cover - exercised in deployment environments
+        raise RuntimeError("pyproj is required for local UTM trajectory output") from exc
+    return Transformer.from_crs("EPSG:{0}".format(epsg), "EPSG:4326", always_xy=True)
+
+
 def geodetic_to_local_utm(point: GeoPoint, origin: GeoPoint) -> Tuple[float, float, float]:
     """Convert WGS84 coordinates to UTM offsets from the UTM origin.
 
@@ -119,3 +128,18 @@ def geodetic_to_local_utm(point: GeoPoint, origin: GeoPoint) -> Tuple[float, flo
         float(northing - origin_northing),
         float(point.altitude - origin.altitude),
     )
+
+
+def local_utm_to_geodetic(x: float, y: float, origin: GeoPoint) -> GeoPoint:
+    """Convert local UTM offsets from ``origin`` into a WGS84 point.
+
+    ``x`` and ``y`` are meter offsets from the UTM projection of the supplied
+    ENU origin.  The origin's UTM zone and hemisphere define the projection.
+    """
+    zone = _utm_zone(origin.longitude)
+    epsg = (32600 if origin.latitude >= 0.0 else 32700) + zone
+    forward = _utm_transformer(epsg)
+    inverse = _geographic_transformer_from_utm(epsg)
+    origin_easting, origin_northing = forward.transform(origin.longitude, origin.latitude)
+    longitude, latitude = inverse.transform(origin_easting + float(x), origin_northing + float(y))
+    return GeoPoint(float(latitude), float(longitude), origin.altitude)

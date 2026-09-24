@@ -1,125 +1,103 @@
 # muti_path_creater
 
-本工程部署在移动车辆工控机上，负责把已有的局部 ENU 点云地图转换为二维栅格地图，并根据起点、目标点生成三组全局轨迹。当前分支不负责在线建图；点云、ENU 原点和规划参数由上位机通过 TCP 发送到车端。
+本工程运行在车辆工控机上，使用点云地图生成二维 PGM 地图，并根据地面车辆客户端发送的局部 UTM 起点、目标点生成三组轨迹。
 
-## 端到端流程
+当前唯一的 TCP 服务是 `tools/ground_vehicle_tcp`，协议采用 `docs/TCP通信协议/通信协议.xls` 定义的定长二进制协议。旧的 JSON `vehicle_gateway` 和 PySide6 `ground_station` 已移除，不再使用。
+
+## 服务流程
+
+1. 客户端发送 32 字节规划请求。
+2. 车端校验帧长度、字段和 CRC8。
+3. 首次请求或地图指纹变化时，车端依次执行无 RViz 的 ROS 点云转换和 PGM 保存。
+4. 车端将局部 UTM 坐标反投影为 WGS84，再由规划器转换到地图局部 ENU 坐标进行规划；请求中的起点和目标点 yaw 当前只接收、不参与规划。
+5. 三组 CSV 和三个 `road_map*.xml` 都校验通过后，车端原子发布到 `output/`，再发送 8 字节成功响应。
+
+地图缓存指纹包含 PCD SHA-256、ENU 原点和转换配置。服务重启时指纹匹配即可复用 PGM；PCD、原点或转换配置变化时自动重新转换。一次只允许执行一个转换/规划任务。
+
+## 目录
 
 ```text
-上位机上传 PCD + ENU 原点
--> 车端原子保存到 map/pcd 和 tools/path_creater/config
--> grid_map_pcl 生成 elevation GridMap
--> filter chain 生成 traversability
--> pgm_saver 保存 PGM/YAML 栅格地图
--> path_creater 根据经纬高起点/目标点规划
--> 返回轨迹文件清单和状态
+tools/ground_vehicle_tcp/
+  protocol.py       定长帧、CRC8、请求/响应编解码
+  server.py         asyncio TCP 服务端
+  workflow.py       地图缓存、坐标转换、规划和输出发布
+  pipeline.py       ROS 转换及规划子进程管理
+  client.py         同机验证客户端
+  config.yaml       服务配置
+  ground-vehicle-tcp.service  systemd 服务文件
 ```
 
-车端同一时间只执行一个转换或规划任务。PCD 使用分块传输、块校验、完整 SHA-256 校验和断点续传。
+规划输出：
 
-## 目录和关键文件
+```text
+output/traj_distance_geo.csv
+output/traj_distance_enu.csv
+output/traj_smooth_geo.csv
+output/traj_smooth_enu.csv
+output/traj_cost_aware_geo.csv
+output/traj_cost_aware_enu.csv
+output/road_map1.xml
+output/road_map2.xml
+output/road_map3.xml
+```
 
-| 路径 | 作用 |
-| --- | --- |
-| `tools/vehicle_gateway/` | TCP 网关、任务状态机、上传存储和流程编排。 |
-| `map/pcd/` | 活动点云目录，默认文件为 `scans_Global_ENU.pcd`。 |
-| `map/pgm/` | 转换后的 `.pgm` 和 `.yaml` 静态地图。 |
-| `tools/path_creater/config/map_enu.meta.yaml` | 活动地图的 ENU 原点经纬高。 |
-| `tools/path_creater/config/config.yaml` | 规划器配置。 |
-| `var/vehicle_gateway/` | 上传临时文件、任务目录、日志和 manifest。 |
+`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别对应代价感知、距离优先和平滑优先轨迹，坐标是以 ENU 原点为参考的局部 UTM 偏移，单位为米。
 
-## 启动车端网关
+## 协议概要
+
+请求帧总长 32 字节：
+
+```text
+magic(2) type(2) length(1)
+start_x_mm(4) start_y_mm(4) start_yaw_mrad(4)
+goal_x_mm(4) goal_y_mm(4) goal_yaw_mrad(4)
+timeout_s(2) crc8(1)
+```
+
+响应帧总长 8 字节：
+
+```text
+magic(2) type(2) length(1) result(1) error_code(1) crc8(1)
+```
+
+所有多字节字段使用大端序。请求 magic 为 `0xFFDA`，响应 magic 为 `0xFFDB`，type 为 `0x0001`。CRC8 初值为 `0x00`、多项式为 `0x07`，计算范围不包含 CRC 自身。错误码 `0x00` 表示成功；`0x01` 目标越界，`0x02` 无法到达，`0x03` 起点不可规划，`0x04` 地图转换失败，`0x05` 规划超时，`0x06` 帧错误，`0x07` 内部错误或服务忙。
+
+完整字段表、坐标转换规则和错误处理见 [`tools/ground_vehicle_tcp/README.md`](tools/ground_vehicle_tcp/README.md)。
+
+## 启动服务
+
+先修改 `tools/ground_vehicle_tcp/config.yaml` 中的项目根目录、PCD 路径、监听端口和转换超时：
 
 ```bash
 source devel/setup.bash
-python3 -m tools.vehicle_gateway.main \
-  --config tools/vehicle_gateway/gateway.yaml
+python3 -m tools.ground_vehicle_tcp.main \
+  --config tools/ground_vehicle_tcp/config.yaml
 ```
 
-正式部署：
+systemd 部署：
 
 ```bash
-sudo cp tools/vehicle_gateway/vehicle-gateway.service /etc/systemd/system/
+sudo cp tools/ground_vehicle_tcp/ground-vehicle-tcp.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now vehicle-gateway.service
+sudo systemctl enable --now ground-vehicle-tcp.service
 ```
 
-部署前修改 `tools/vehicle_gateway/gateway.yaml` 中的监听地址、端口和令牌。生产环境建议配置防火墙，仅允许上位机 IP 访问 TCP 端口。
+## 同机验证客户端
 
-## TCP 操作顺序
-
-协议帧格式为网络字节序：
-
-```text
-uint32 frame_length
-uint32 json_header_length
-UTF-8 JSON header
-binary payload
-```
-
-主要消息为 `hello`、`map.upload.begin`、`map.upload.chunk`、`map.upload.commit`、`map.convert.start`、`plan.start`、`job.status`、`job.cancel`、`artifact.list` 和 `artifact.download`。TCP 不保证一次发送对应一次接收，客户端必须按长度读取完整帧。
-
-### 1. 上传 PCD 和 ENU 原点
-
-`map.upload.begin` 携带 `map_id`、`pcd_name`、`file_size`、完整 SHA-256 和 `enu_origin`。随后发送多个 `map.upload.chunk`，二进制内容放在 payload，JSON 头携带 `offset` 和可选块 SHA-256。车端响应 `next_offset`，断线后重新 begin 即可续传。
-
-提交 `map.upload.commit` 后，车端校验完整文件和 PCD 头，并原子更新：
-
-```text
-map/pcd/scans_Global_ENU.pcd
-tools/path_creater/config/map_enu.meta.yaml
-```
-
-### 2. 转换并保存 PGM 地图
-
-发送 `map.convert.start`，携带 `map_id`、`pcd_name` 和 `pgm_name`。车端无 RViz 执行：
+服务启动后，在另一终端发送一条请求。坐标参数使用米，客户端会编码为毫米；yaw 使用弧度，服务端不会用于规划：
 
 ```bash
-roslaunch grid_map_pcl grid_map_pcl_loader_node.launch pcd_filename:=scans_Global_ENU.pcd enable_rviz:=false
-roslaunch grid_map_demos filters_demo_gai.launch enable_rviz:=false
-python3 tools/pgm_saver/save_continuous_map.py -n <任务临时目录>/campus
+python3 -m tools.ground_vehicle_tcp.client \
+  --host 127.0.0.1 --port 8079 \
+  --start-x 0 --start-y 0 --goal-x 10 --goal-y 5 \
+  --timeout 120 --response-timeout 2400
 ```
 
-成功后生成 `map/pgm/campus.pgm` 和 `map/pgm/campus.yaml`，服务端会检查话题、输出并回收 ROS 进程组。
+## 测试
 
-### 3. 开始规划
-
-`plan.start` 携带 `map_id`、`pgm_name`、`start`、`goal` 和可选白名单 `config_overrides`。车端执行 `python3 -m tools.path_creater.main --config tools/path_creater/config/config.yaml`。结果通过 `job.status` 和 `artifact.list` 返回路径、大小和 SHA-256：
-
-```text
-traj_distance_geo.csv    traj_distance_enu.csv
-traj_smooth_geo.csv      traj_smooth_enu.csv
-traj_cost_aware_geo.csv  traj_cost_aware_enu.csv
-road_map_distance.xml    road_map_smooth.xml
-road_map_cost_aware.xml
-overlay.png              config.resolved.yaml
-```
-
-## 状态和错误
-
-典型状态：`UPLOADING -> READY -> CONVERTING -> MAP_READY -> PLANNING -> SUCCEEDED`。失败进入 `FAILED`，常见错误码包括 `INVALID_ARGUMENT`、`CHECKSUM_MISMATCH`、`BUSY`、`FILE_NOT_FOUND`、`ROS_UNAVAILABLE`、`MAP_TOPIC_TIMEOUT`、`PROCESS_FAILED`、`OUTPUT_INVALID`、`PLANNER_FAILED`、`JOB_TIMEOUT` 和 `JOB_CANCELLED`。任务执行期间新任务返回 `BUSY`，可发送 `job.cancel`。
-
-## 手动调试
+只运行新协议服务端及客户端相关测试：
 
 ```bash
-source devel/setup.bash
-roslaunch grid_map_pcl grid_map_pcl_loader_node.launch enable_rviz:=false
-roslaunch grid_map_demos filters_demo_gai.launch enable_rviz:=false
-python3 tools/pgm_saver/save_continuous_map.py -n campus
-python3 -m tools.path_creater.main
+python3 -m unittest tests.test_ground_vehicle_tcp -v
+python3 -m compileall -q tools/ground_vehicle_tcp
 ```
-
-## 坐标和地图语义
-
-工程同时使用经纬高、局部 ENU 米制坐标和 PGM 栅格索引，不能混用。规划器将经纬高起点、目标点转换为 ENU 和栅格坐标，输出经纬度 CSV 与 ENU CSV。
-
-- PGM `205`：未知区域，禁止通行；
-- PGM `<= 90`：绝对障碍；
-- 其他有效灰度：连续通行代价，灰度越大代价越低。
-
-未观测区域必须保持：`elevation NaN -> traversability NaN -> OccupancyGrid -1 -> PGM 205`。
-
-详细规划参数见 [`tools/path_creater/README.md`](tools/path_creater/README.md)，网关细节见 [`tools/vehicle_gateway/README.md`](tools/vehicle_gateway/README.md)，长期约定见 [`docs/project-context.md`](docs/project-context.md)。
-
-上位机的安装、运行和打包说明见 [`tools/ground_station/README.md`](tools/ground_station/README.md)。
-
-地面端对接公司使用的正式 TCP 应用层协议见 [`docs/vehicle_gateway_protocol.md`](docs/vehicle_gateway_protocol.md)，其中包含帧结构、JSON 字段、PCD 上传、地图转换、路径规划、状态反馈、结果下载和错误码。

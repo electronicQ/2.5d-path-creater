@@ -1,0 +1,10 @@
+# Independent configuration for the Excel-defined ground-vehicle protocol.
+host: 0.0.0.0
+port: 8079
+project_root: ../..
+data_root: var/ground_vehicle_tcp
+pcd_path: map/pcd/scans_Global_ENU.pcd
+pcd_name: scans_Global_ENU.pcd
+metadata_path: tools/path_creater/config/map_enu.meta.yaml
+planner_config_path: tools/path_creater/config/config.yaml
+conversion_timeout_s: 1800

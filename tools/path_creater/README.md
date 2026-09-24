@@ -21,18 +21,20 @@ output/traj_smooth_geo.csv
 output/traj_smooth_enu.csv
 output/traj_cost_aware_geo.csv
 output/traj_cost_aware_enu.csv
-output/road_map_distance.xml
-output/road_map_smooth.xml
-output/road_map_cost_aware.xml
+output/road_map1.xml
+output/road_map2.xml
+output/road_map3.xml
 output/overlay.png
 output/config.resolved.yaml
 ```
 
 CSV 格式：
 
-- `*_geo.csv`：`latitude,longitude`
-- `*_enu.csv`：`x,y`
-- `road_map_<mode>.xml`：与 ENU 原点一致的局部 UTM 轨迹，使用 `road_map.xml` 的 `map/vertex` 结构，只包含轨迹点。
+- `traj_distance_geo.csv`、`traj_smooth_geo.csv`、`traj_cost_aware_geo.csv`：WGS84 经纬度坐标，列为 `latitude,longitude`，不是栅格坐标，也不是 UTM 坐标。
+- `traj_distance_enu.csv`、`traj_smooth_enu.csv`、`traj_cost_aware_enu.csv`：以 `map_enu.meta.yaml` 中 `enu_origin` 为原点的局部 ENU 坐标，列为 `x,y`，单位为米；其中 `x` 为 East，`y` 为 North。
+- `road_map1.xml`：代价感知（`cost_aware`）轨迹的局部 UTM XML。
+- `road_map2.xml`：距离优先（`distance`）轨迹的局部 UTM XML。
+- `road_map3.xml`：平滑优先（`smooth`）轨迹的局部 UTM XML。
 
 局部 UTM 坐标的定义为：
 
@@ -41,7 +43,7 @@ local_x = UTM_easting(point) - UTM_easting(ENU_origin)
 local_y = UTM_northing(point) - UTM_northing(ENU_origin)
 ```
 
-UTM 分区和南北半球根据 ENU 原点选择，XML 中的 `x`、`y` 单位为米，`yaw` 单位为弧度。三种规划策略分别写入 `road_map_distance.xml`、`road_map_smooth.xml` 和 `road_map_cost_aware.xml`。
+UTM 分区和南北半球根据 ENU 原点选择，XML 中的 `x`、`y` 单位为米，`yaw` 单位为弧度。XML 是“以 ENU 原点为原点的局部 UTM 偏移坐标”，与 ENU 使用相同的原点，但不是严格意义上的 ENU 坐标。文件名映射固定为：`road_map1.xml = road_map_cost_aware.xml`、`road_map2.xml = road_map_distance.xml`、`road_map3.xml = road_map_smooth.xml`。XML 只包含 `<map>` 根节点和 `<vertex>` 轨迹点。
 
 默认会对 A* 输出先做直线可视化 shortcut，再做安全圆角曲线平滑，并按固定间隔采样；CSV 中保存的是最终采样点。
 

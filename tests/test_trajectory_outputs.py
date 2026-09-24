@@ -4,6 +4,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from tools.path_creater.geo import GeoPoint, geodetic_to_local_utm
+from tools.path_creater.main import ROAD_MAP_FILENAMES
 from tools.path_creater.trajectory import write_enu_csv, write_geo_csv, write_road_map_xml
 
 
@@ -22,7 +23,7 @@ class TrajectoryOutputTest(unittest.TestCase):
 
     def test_write_road_map_xml_matches_sample_structure(self):
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / "road_map_distance.xml"
+            p = Path(d) / "road_map1.xml"
             write_road_map_xml(p, [(1.0, 2.0), (3.0, 2.0), (3.0, 5.0)])
 
             root = ET.parse(p).getroot()
@@ -40,8 +41,14 @@ class TrajectoryOutputTest(unittest.TestCase):
             self.assertAlmostEqual(float(vertices[0].attrib["yaw"]), 0.0)
             self.assertAlmostEqual(float(vertices[1].attrib["yaw"]), 1.570796, places=5)
             self.assertAlmostEqual(float(vertices[2].attrib["yaw"]), 1.570796, places=5)
-            self.assertEqual(root.findall("edge"), [])
-            self.assertEqual(root.findall("type"), [])
+            edges = root.findall("edge")
+            self.assertEqual([edge.attrib for edge in edges], [
+                {"id": "0000", "src_id": "0", "dst_id": "1"},
+                {"id": "0001", "src_id": "1", "dst_id": "2"},
+            ])
+            types = root.findall("type")
+            self.assertEqual(types[0].attrib["type"], "0")
+            self.assertTrue(all(item.attrib["type"] == "2" for item in types[1:]))
 
     def test_local_utm_origin_is_zero(self):
         origin = GeoPoint(latitude=22.39758935, longitude=113.30942461, altitude=25.8618)
@@ -54,6 +61,13 @@ class TrajectoryOutputTest(unittest.TestCase):
         self.assertGreater(east, 0.0)
         self.assertGreater(north, 0.0)
         self.assertAlmostEqual(up, 1.1382, places=4)
+
+    def test_road_map_filename_mapping_is_stable(self):
+        self.assertEqual(ROAD_MAP_FILENAMES, {
+            "cost_aware": "road_map1.xml",
+            "distance": "road_map2.xml",
+            "smooth": "road_map3.xml",
+        })
 
 
 if __name__ == "__main__":
