@@ -32,7 +32,8 @@ find_package(catkin REQUIRED
   ${CATKIN_PACKAGE_DEPENDENCIES}
 )
 
-find_package(TBB 2020.1 EXACT REQUIRED)
+# Uses the classic TBB task_scheduler_init API (Ubuntu 20.04 TBB).
+find_package(TBB REQUIRED)
 
 find_package(OpenCV REQUIRED)
 
