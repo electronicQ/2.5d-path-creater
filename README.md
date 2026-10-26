@@ -32,7 +32,7 @@ bash scripts/deploy_vehicle.sh --deps-only
 bash scripts/deploy_vehicle.sh --build-only --jobs 2
 ```
 
-准备 PCD 地图和原点元数据后，使用统一入口启动（18.04 不要直接运行系统 python3）：
+启动前，先按下一节将 PCD 地图和原点元数据放到工控机项目目录中，再使用统一入口启动（18.04 不要直接运行系统 python3）：
 
 ```bash
 bash scripts/run_vehicle.sh
@@ -52,6 +52,60 @@ env -u PYTHONPATH -u PYTHONHOME .runtime/planner/bin/python -m tools.ground_vehi
 坐标为示例，必须替换为实际地图内的可通行起终点。
 
 详见 [Ubuntu 18.04 部署与排障](docs/deployment-ubuntu18.04.md) 和 [TCP 对接手册](tools/ground_vehicle_tcp/README.md)。20.04 上仍使用 Noetic；22.04/24.04 不属于此原生部署入口支持范围。
+
+## 启动前必须准备的两个地图文件
+
+**首次启动规划服务前，必须提前将对应的 PCD 点云地图和 ENU 原点经纬高文件放到工控机上。** 已创建的 `map/pcd/` 目录用于存放点云，原点文件放在 `tools/path_creater/config/` 中。
+
+以下路径均相对于项目根目录：
+
+```text
+2.5d-path-creater/
+├── map/
+│   └── pcd/
+│       └── scans_Global_ENU.pcd       # 放入实际使用的点云地图
+└── tools/
+    └── path_creater/
+        └── config/
+            └── map_enu.meta.yaml     # 填写该点云对应的 ENU 原点经纬高
+```
+
+例如，工控机上的项目目录为 `/home/union/2.5d-path-creater`，则两个文件分别位于：
+
+| 文件 | 工控机上的完整路径 |
+| --- | --- |
+| PCD 点云 | `/home/union/2.5d-path-creater/map/pcd/scans_Global_ENU.pcd` |
+| 原点经纬高 | `/home/union/2.5d-path-creater/tools/path_creater/config/map_enu.meta.yaml` |
+
+`map_enu.meta.yaml` 使用以下格式；数值仅示意，必须替换为**生成这份点云时实际采用的原点**，不能直接沿用仓库示例：
+
+```yaml
+enu_origin:
+  latitude: 22.39758935
+  longitude: 113.30942461
+  altitude: 25.8618
+```
+
+`latitude` 为纬度、`longitude` 为经度，单位为度；`altitude` 为高度，单位为米。PCD 内部坐标应为相对于该原点的局部 ENU 米制坐标。原点文件与点云必须配套。
+
+检查 `tools/ground_vehicle_tcp/config.yaml` 中的配置与实际文件一致：
+
+```yaml
+pcd_path: map/pcd/scans_Global_ENU.pcd
+pcd_name: scans_Global_ENU.pcd
+metadata_path: tools/path_creater/config/map_enu.meta.yaml
+```
+
+如果点云叫 `campus.pcd`，仍放入 `map/pcd/`，并同时把 `pcd_path` 改为 `map/pcd/campus.pcd`、`pcd_name` 改为 `campus.pcd`。两个配置中的文件名必须一致。建议保留 `map/pcd/` 目录，因为当前 ROS 转换器默认从这里读取点云；仅修改 `pcd_path` 的目录并不能改变 ROS 的读取目录。
+
+在项目根目录执行以下命令可检查默认文件是否存在；使用其他文件名时同步修改命令中的路径：
+
+```bash
+ls -lh map/pcd/scans_Global_ENU.pcd
+cat tools/path_creater/config/map_enu.meta.yaml
+```
+
+点云需要通过 U 盘、SCP 或 SFTP 等方式提前复制到工控机。当前 TCP 接口只接收规划请求，不负责上传这两个文件；部署脚本也不会生成真实点云或自动确定地图原点。
 
 ## 部署分工与功能边界
 
