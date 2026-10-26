@@ -15,9 +15,10 @@
   <build_depend>rviz</build_depend>
   <build_depend>grid_map_ros</build_depend>
   <build_depend>grid_map_msgs</build_depend>
-  <run_depend>libqt5-core</run_depend>
-  <run_depend>libqt5-gui</run_depend>
-  <run_depend>libqt5-widgets</run_depend>
+  <!-- qtbase5-dev pulls in Core/Gui/Widgets on Bionic as well as newer Ubuntu.
+       The legacy libqt5-* rosdep keys now resolve to unavailable t64 packages
+       on Bionic when using current rosdep data. -->
+  <run_depend>qtbase5-dev</run_depend>
   <run_depend>rviz</run_depend>
   <run_depend>grid_map_ros</run_depend>
   <run_depend>grid_map_msgs</run_depend>

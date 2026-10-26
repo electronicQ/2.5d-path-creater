@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/muti_path_creater
-ExecStart=/bin/bash -lc 'source devel/setup.bash && exec python3 -m tools.ground_vehicle_tcp.main --config tools/ground_vehicle_tcp/config.yaml'
+ExecStart=/bin/bash /opt/muti_path_creater/scripts/run_vehicle.sh
 Restart=on-failure
 RestartSec=3
 

@@ -32,7 +32,8 @@ find_package(catkin REQUIRED
   ${CATKIN_PACKAGE_DEPENDENCIES}
 )
 
-# Uses the classic TBB task_scheduler_init API (Ubuntu 20.04 TBB).
+# Classic TBB discovery also supports Ubuntu 18.04 (no TBBConfig.cmake).
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(TBB REQUIRED)
 
 find_package(OpenCV REQUIRED)

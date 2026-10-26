@@ -26,7 +26,7 @@
 
 以下车端示例使用项目目录 `/home/gzq/2.5d-path-creater`；部署到其他目录时替换为实际路径。
 
-首次部署推荐先在项目根目录以普通用户运行自动部署脚本，具体选项和系统要求见 [根目录部署说明](../../README.md#新工控机部署先安装依赖再编译)：
+首次部署推荐先在项目根目录以普通用户运行自动部署脚本，具体选项和系统要求见 [根目录部署说明](../../README.md)：
 
 ```bash
 bash scripts/deploy_vehicle.sh
@@ -34,7 +34,9 @@ bash scripts/deploy_vehicle.sh
 # bash scripts/deploy_vehicle.sh --setup-ros-repo
 ```
 
-脚本成功后可跳过下面的手动安装、编译步骤，直接准备地图；当前脚本原生支持 Ubuntu 20.04 + ROS Noetic。
+脚本成功后可跳过下面的手动安装、编译步骤，直接准备地图；脚本自动支持 Ubuntu 18.04 + Melodic 和 Ubuntu 20.04 + Noetic；18.04 的环境隔离、启动及排障详见 [18.04 部署手册](../../docs/deployment-ubuntu18.04.md)。
+
+下面是 20.04/Noetic 的手动安装方式；18.04 请使用上面的部署脚本，不要使用系统 Python 3.6 安装规划器。
 
 需要 ROS1/catkin 环境、可运行的 `grid_map_pcl` 和 `grid_map_demos` 包，以及 Python 3 依赖。项目 Python 依赖见根目录 `requirements.txt`。
 
@@ -100,8 +102,7 @@ conversion_timeout_s: 1800
 
 ```bash
 cd /home/gzq/2.5d-path-creater
-source devel/setup.bash
-python3 -m tools.ground_vehicle_tcp.main --config tools/ground_vehicle_tcp/config.yaml
+bash scripts/run_vehicle.sh --config tools/ground_vehicle_tcp/config.yaml
 ```
 
 保持终端运行。地图转换由服务收到请求后自动启动，无需再手动启动一套转换节点；避免其他同名 ROS 节点和同名输出话题干扰。ROS master 可预先启动，也可由本机 roslaunch 按 ROS 环境配置启动。
@@ -123,7 +124,7 @@ sudo cp tools/ground_vehicle_tcp/ground-vehicle-tcp.service /etc/systemd/system/
 sudo systemctl edit --full ground-vehicle-tcp.service
 ```
 
-将 `WorkingDirectory` 改为实际项目根目录；确认 `ExecStart` 使用的 shell 能加载 ROS 环境和该目录的 `devel/setup.bash`。如需运行账号，配置具有地图读取和输出目录写入权限的 `User`。模板引用 `roscore.service` 只定义启动顺序，不会自动创建该服务。
+将 `WorkingDirectory` 和 `ExecStart` 中的 `/opt/muti_path_creater` 同时改为实际项目根目录。`ExecStart` 运行 `scripts/run_vehicle.sh`，自动选择 ROS 和规划解释器；设置 `User=部署脚本使用的普通账号`，并确保该账号有地图读取、输出写入权限。模板引用 `roscore.service` 只定义启动顺序，不会自动创建该服务。
 
 ```bash
 sudo systemctl daemon-reload
@@ -165,6 +166,8 @@ print(x_m, y_m)  # 作为客户端 --start-x / --start-y 的米制输入
 车端按“局部 UTM → WGS84 → 地图 ENU → 栅格”规划。请求没有高度字段，转换时采用地图原点高度。起终点必须处于地图可通行区域，未知区域默认不可通行。
 
 ## 6. 第五步：先用仓库客户端联调
+
+**18.04 说明**：本节和下文 Python 示例应使用 `env -u PYTHONPATH -u PYTHONHOME .runtime/planner/bin/python` 替换 `python3`；车端服务使用 `bash scripts/run_vehicle.sh`。地面客户端与 ROS 无关，只需支持当前代码的 Python 环境（推荐 Python 3.8 或更新版本）。
 
 ### 6.1 车端本机验证
 

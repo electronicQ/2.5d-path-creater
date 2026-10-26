@@ -26,3 +26,6 @@ output/
 # Keep lightweight static planning maps tracked.
 !map/pgm/*.pgm
 !map/pgm/*.yaml
+
+# Project-local Melodic runtime and Python build cache
+.runtime/

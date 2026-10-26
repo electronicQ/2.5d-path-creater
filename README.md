@@ -4,43 +4,54 @@
 
 当前唯一的 TCP 服务是 `tools/ground_vehicle_tcp`，协议采用 `docs/TCP通信协议/通信协议.xls` 定义的定长二进制协议。旧的 JSON `vehicle_gateway` 和 PySide6 `ground_station` 已移除，不再使用。
 
-## 新工控机部署（先安装依赖，再编译）
+## Ubuntu 18.04 适配分支与部署
 
-原生部署脚本面向 **Ubuntu 20.04 + ROS1 Noetic**。在无人车上以普通账号执行，不要对整个脚本使用 `sudo`；安装系统包时脚本会调用 sudo。需要联网下载 apt、rosdep 和 Python 依赖。
+本分支 `kunpengfinal_18.04` 增加 **Ubuntu 18.04 + ROS Melodic** 原生部署，同时保留 Ubuntu 20.04 + Noetic 的部署入口。部署脚本根据操作系统自动选择，不能混装两种 ROS 发行版。
 
 ```bash
-cd /你的路径/2.5d-path-creater
-bash scripts/deploy_vehicle.sh
+git clone --branch kunpengfinal_18.04 --single-branch git@github.com:electronicQ/2.5d-path-creater.git
+cd 2.5d-path-creater
+# 以普通用户执行；安装包时脚本自行调用 sudo
+bash scripts/deploy_vehicle.sh --setup-ros-repo --jobs 2
 ```
 
-如果新机器尚未配置 ROS 软件源，使用以下命令，允许脚本添加官方签名的 ROS1 apt 源并安装 Noetic：
+已有有效 ROS 软件源时可以省略 `--setup-ros-repo`。18.04 上脚本会安装 Melodic 和 C++/ROS 依赖，使用 rosdep 检查所有包，编译项目内 Python 3.8.20、建立独立规划环境并安装锁定版本的 Python 依赖，再以系统 Python 2.7 执行 catkin 编译。不会覆盖系统 Python，不需要将整套 Melodic 迁移到 Python 3。
 
-```bash
-bash scripts/deploy_vehicle.sh --setup-ros-repo
+```text
+ROS Melodic / 系统 Python 2.7：ROS 工具、消息生成、地图保存
+项目 .runtime/planner / Python 3.8：TCP 服务、坐标转换、轨迹规划
+两者通过 PGM/YAML 文件衔接；运行脚本隔离 Python 模块搜索路径
 ```
 
-脚本会检查系统/ROS 环境，安装编译工具与系统库，使用 rosdep 根据工作区所有 `package.xml` 安装依赖，补齐 Python 依赖，再执行 `catkin_make` 并检查关键节点。默认只用 2 个编译任务，避免 PCL 编译占满内存。NumPy 限制为 1.x，以兼容 ROS/OpenCV；Python 依赖装到当前用户，部署和运行应使用同一个账号及 `/usr/bin/python3`，先退出 conda/virtualenv。
+初次部署需要联网、sudo 权限和足够的磁盘空间；Python 源码编译与 PCL 编译需要一定时间。编译并发默认 2，内存紧张可改成 1。部署日志保存在 `log/deploy/`。
 
 ```bash
-# 内存较小的工控机
 bash scripts/deploy_vehicle.sh --jobs 1
-# 分开安装与编译
+# 也可分开安装和编译；build-only 不安装依赖、不访问网络
 bash scripts/deploy_vehicle.sh --deps-only
 bash scripts/deploy_vehicle.sh --build-only --jobs 2
 ```
 
-部署日志保存在 `log/deploy/`。脚本遇到 apt、网络、rosdep 或编译失败会停止，不会忽略错误继续运行；修复原因后可重复执行。`--build-only` 不安装依赖、不访问网络。脚本不删除旧编译目录、不改地图和原点配置、不启动 TCP 服务，也不安装 systemd 服务。
-
-若项目从别的机器复制过来且携带 `build/`、`devel/`，出现 CMake 路径不一致时，先将这两个目录移走备份，再重新执行脚本。下载源码本身通常不含这些目录。
-
-**Ubuntu 22.04/24.04 不能直接套用这份原生部署流程**：工程使用 ROS1/catkin 和旧版 TBB API，安装 ROS2 不能补齐这些依赖。脚本会提前退出，避免混装 focal 软件包；应使用 Ubuntu 20.04 环境/容器，或另行完成版本适配。Noetic 已结束常规支持，rosdep 更新显式包含 EOL 发行版。若 apt 报找不到包，检查 ROS/Ubuntu 软件源及网络；若 rosdep 更新失败，检查对 GitHub raw 和 ROS 索引的访问，不要用跳过依赖的方式继续编译。[rosdep 官方说明](https://github.com/ros-infrastructure/rosdep/blob/master/doc/overview.rst)。
-
-编译完成后，继续按 [TCP 部署与对接手册](tools/ground_vehicle_tcp/README.md) 准备点云地图、填写原点并启动服务：
+准备 PCD 地图和原点元数据后，使用统一入口启动（18.04 不要直接运行系统 python3）：
 
 ```bash
-source devel/setup.bash
-/usr/bin/python3 -m tools.ground_vehicle_tcp.main --config tools/ground_vehicle_tcp/config.yaml
+bash scripts/run_vehicle.sh
+# 自定义服务配置
+bash scripts/run_vehicle.sh --config tools/ground_vehicle_tcp/config.yaml
 ```
+
+18.04 上运行仓库客户端或规划器命令时，使用 `.runtime/planner/bin/python` 替换文档示例中的 `python3`，并通过 `env -u PYTHONPATH -u PYTHONHOME` 隔离 ROS Python 2 路径。例如：
+
+```bash
+env -u PYTHONPATH -u PYTHONHOME .runtime/planner/bin/python -m tools.ground_vehicle_tcp.client \
+  --host 127.0.0.1 --port 8079 \
+  --start-x 0 --start-y 0 --goal-x 10 --goal-y 5 \
+  --timeout 120 --response-timeout 2400
+```
+
+坐标为示例，必须替换为实际地图内的可通行起终点。
+
+详见 [Ubuntu 18.04 部署与排障](docs/deployment-ubuntu18.04.md) 和 [TCP 对接手册](tools/ground_vehicle_tcp/README.md)。20.04 上仍使用 Noetic；22.04/24.04 不属于此原生部署入口支持范围。
 
 ## 部署分工与功能边界
 
@@ -126,12 +137,10 @@ magic(2) type(2) length(1) result(1) error_code(1) crc8(1)
 先修改 `tools/ground_vehicle_tcp/config.yaml` 中的项目根目录、PCD 路径、监听端口和转换超时：
 
 ```bash
-source devel/setup.bash
-python3 -m tools.ground_vehicle_tcp.main \
-  --config tools/ground_vehicle_tcp/config.yaml
+bash scripts/run_vehicle.sh --config tools/ground_vehicle_tcp/config.yaml
 ```
 
-systemd 部署前，先将服务文件中的 `WorkingDirectory=/opt/muti_path_creater` 改成车端实际项目路径，并确认该路径下已编译生成 `devel/setup.bash`；然后执行：
+systemd 部署前，先将服务文件中的 `WorkingDirectory` 和 `ExecStart` 中的 `/opt/muti_path_creater` 都改成车端实际项目路径，并配置为部署依赖的普通用户 `User=你的账号`，并确认该路径下已编译生成 `devel/setup.bash`；然后执行：
 
 ```bash
 sudo cp tools/ground_vehicle_tcp/ground-vehicle-tcp.service /etc/systemd/system/

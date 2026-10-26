@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -23,7 +24,19 @@ class PipelineRunner:
         self.project_root = Path(project_root).resolve()
         self.timeout_s = float(timeout_s)
         self.poll_s = float(poll_s)
-        self.env = dict(env or os.environ)
+        self.env = dict(os.environ if env is None else env)
+        # The launcher preserves ROS's Python path separately from the Python 3
+        # server. ROS Melodic tools and the saver must retain Python 2 modules.
+        ros_path = self.env.get("VEHICLE_ROS_PYTHONPATH")
+        if ros_path is not None:
+            self.env["PYTHONPATH"] = ros_path
+        self.ros_python = self.env.get("VEHICLE_ROS_PYTHON") or (
+            "/usr/bin/python2.7" if self.env.get("ROS_DISTRO") == "melodic"
+            else "/usr/bin/python3"
+        )
+        self.planner_env = dict(self.env)
+        self.planner_env.pop("PYTHONPATH", None)
+        self.planner_env.pop("PYTHONHOME", None)
         self.processes: List[subprocess.Popen] = []
 
     def _start(self, command: List[str], log_path: Path) -> subprocess.Popen:
@@ -73,7 +86,7 @@ class PipelineRunner:
             ], log_path)
             self._wait_topic("/grid_map_visualization/traversability_grid", log_path, deadline)
             saver = self._start([
-                "python3", "tools/pgm_saver/save_continuous_map.py", "-n", str(output_base),
+                self.ros_python, "tools/pgm_saver/save_continuous_map.py", "-n", str(output_base),
             ], log_path)
             while saver.poll() is None:
                 if time.monotonic() >= deadline:
@@ -99,9 +112,9 @@ class PipelineRunner:
         try:
             with log_path.open("ab") as log:
                 result = subprocess.run(
-                    ["python3", "-m", "tools.path_creater.main", "--config", str(config_path)],
+                    [sys.executable, "-m", "tools.path_creater.main", "--config", str(config_path)],
                     cwd=str(self.project_root), stdout=log, stderr=subprocess.STDOUT,
-                    timeout=self.timeout_s, env=self.env,
+                    timeout=self.timeout_s, env=self.planner_env,
                 )
         except subprocess.TimeoutExpired as exc:
             raise PipelineError("JOB_TIMEOUT", "planner timed out") from exc

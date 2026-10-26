@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from __future__ import print_function
 import numpy as np
 import argparse
 import math
 import sys
-from pathlib import Path
-
 try:
-    import cv2
-except ImportError:
-    cv2 = None
+    from pathlib import Path
+except ImportError:  # ROS Melodic / Python 2.7
+    from pathlib2 import Path
 
 try:
     import rospy
@@ -66,7 +66,7 @@ class ContinuousMapSaver:
         rospy.init_node('hd_map_saver', anonymous=True)
         # 订阅你的占据栅格话题
         rospy.Subscriber('/grid_map_visualization/traversability_grid', OccupancyGrid, self.map_callback)
-        rospy.loginfo(f"等待地图数据... 准备保存为: {self.output_base}.pgm 和 {self.output_base}.yaml")
+        rospy.loginfo("等待地图数据... 准备保存为: {0}.pgm 和 {0}.yaml".format(self.output_base))
         rospy.spin()
 
     def map_callback(self, msg):
@@ -78,7 +78,7 @@ class ContinuousMapSaver:
         img = occupancy_to_pgm_array(msg.data, width, height)
 
         # 翻转图像坐标系匹配 ROS
-        img = cv2.flip(img, 0)
+        img = np.flipud(img)
 
         # --- 2. 提取原点与姿态 ---
         # 从四元数计算 Yaw 角 (绕Z轴旋转)
@@ -92,29 +92,29 @@ class ContinuousMapSaver:
 
         # --- 3. 保存 .pgm 文件 ---
         self.output_base.parent.mkdir(parents=True, exist_ok=True)
-        pgm_path = self.output_base.parent / f"{self.output_base.name}.pgm"
-        cv2.imwrite(str(pgm_path), img)
+        pgm_path = self.output_base.parent / (self.output_base.name + ".pgm")
+        # Binary PGM works on both Python 2 and 3 without cv_bridge/OpenCV ABI.
+        with open(str(pgm_path), "wb") as stream:
+            stream.write(("P5\n{} {}\n255\n".format(width, height)).encode("ascii"))
+            stream.write(img.tobytes())
 
         # --- 4. 生成并保存 .yaml 文件 ---
-        yaml_path = self.output_base.parent / f"{self.output_base.name}.yaml"
-        yaml_content = f"image: {pgm_path.name}\n" \
-                       f"resolution: {msg.info.resolution}\n" \
-                       f"origin: [{origin_x}, {origin_y}, {yaw}]\n" \
-                       f"negate: 0\n" \
-                       f"occupied_thresh: 0.65\n" \
-                       f"free_thresh: 0.196\n" \
-                       f"mode: scale\n"
-        with open(yaml_path, 'w') as f:
-            f.write(yaml_content)
+        yaml_path = self.output_base.parent / (self.output_base.name + ".yaml")
+        # Quote the filename as a JSON string, which is also a valid YAML scalar.
+        import json
+        yaml_content = (
+            "image: {}\nresolution: {}\norigin: [{}, {}, {}]\n"
+            "negate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\nmode: scale\n"
+        ).format(json.dumps(pgm_path.name), msg.info.resolution, origin_x, origin_y, yaw)
+        with open(str(yaml_path), "w") as stream:
+            stream.write(yaml_content)
 
-        rospy.loginfo(f"大功告成！已成功生成 {pgm_path} 和 {yaml_path}")
+        rospy.loginfo("地图已保存: {} 和 {}".format(pgm_path, yaml_path))
         rospy.signal_shutdown("Finished saving map")
 
 if __name__ == '__main__':
     if rospy is None:
         raise RuntimeError("ROS is required to run the map saver node.")
-    if cv2 is None:
-        raise RuntimeError("OpenCV is required to run the map saver node.")
 
     # 剥离 ROS 注入的额外参数，只留给 argparse 处理我们的参数
     argv = rospy.myargv(argv=sys.argv)

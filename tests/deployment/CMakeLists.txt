@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.5.1)
+project(classic_tbb_smoke CXX)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../src/grid_map/grid_map_filters/cmake")
+find_package(TBB REQUIRED)
+add_executable(classic_tbb_smoke classic_tbb_smoke.cpp)
+target_include_directories(classic_tbb_smoke PRIVATE ${TBB_INCLUDE_DIRS})
+target_link_libraries(classic_tbb_smoke ${TBB_LIBRARIES})
+set_property(TARGET classic_tbb_smoke PROPERTY CXX_STANDARD 17)

@@ -20,8 +20,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 # 声明catkin包配置（供其他包依赖）
 catkin_package(
-  INCLUDE_DIRS include  # 若有自定义头文件，需指定include目录
-  LIBRARIES ${PROJECT_NAME}
   CATKIN_DEPENDS
     roscpp
     grid_map_ros
@@ -35,7 +33,6 @@ catkin_package(
 
 # 包含头文件目录
 include_directories(
-  include  # 自定义头文件目录（本例无，可保留）
   ${catkin_INCLUDE_DIRS}  # ROS依赖包的头文件目录
 )
 
