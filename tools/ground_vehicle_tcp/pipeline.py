@@ -54,22 +54,26 @@ class PipelineRunner:
         self.processes.append(process)
         return process
 
-    def _wait_topic(self, topic: str, log_path: Path, deadline: float) -> None:
-        command = ["rostopic", "echo", "-n", "1", topic]
-        while time.monotonic() < deadline:
+    def _wait_for_ros_master(self, deadline: float, timeout_s: float = 10.0) -> None:
+        master_deadline = min(deadline, time.monotonic() + timeout_s)
+        command = ["rosnode", "list"]
+        while time.monotonic() < master_deadline:
+            remaining_s = master_deadline - time.monotonic()
             try:
                 result = subprocess.run(
-                    command, cwd=str(self.project_root), stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT, timeout=max(self.poll_s, 1.0), env=self.env,
+                    command,
+                    cwd=str(self.project_root),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=max(0.1, min(remaining_s, 1.0)),
+                    env=self.env,
                 )
             except (OSError, subprocess.TimeoutExpired):
                 result = None
-            if result is not None and result.returncode == 0 and result.stdout:
-                with log_path.open("ab") as log:
-                    log.write(result.stdout)
+            if result is not None and result.returncode == 0:
                 return
-            time.sleep(self.poll_s)
-        raise PipelineError("MAP_TOPIC_TIMEOUT", "timed out waiting for {}".format(topic))
+            time.sleep(0.1)
+        raise PipelineError("ROS_MASTER_TIMEOUT", "ROS master did not become ready")
 
     def convert(self, pcd_name: str, output_base: Path, log_path: Path, rviz: bool = False) -> Dict[str, str]:
         self.processes = []
@@ -80,12 +84,11 @@ class PipelineRunner:
                 "pcd_filename:=" + pcd_name, "enable_rviz:=" + str(rviz).lower(),
                 "publish_point_cloud:=false",
             ], log_path)
-            self._wait_topic("/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud", log_path, deadline)
+            self._wait_for_ros_master(deadline)
             self._start([
                 "roslaunch", "grid_map_demos", "filters_demo_gai.launch",
                 "enable_rviz:=" + str(rviz).lower(),
             ], log_path)
-            self._wait_topic("/grid_map_visualization/traversability_grid", log_path, deadline)
             saver = self._start([
                 self.ros_python, "tools/pgm_saver/save_continuous_map.py", "-n", str(output_base),
             ], log_path)

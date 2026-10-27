@@ -91,7 +91,7 @@ conversion_timeout_s: 1800
 - `project_root` 相对于服务配置文件所在目录解析；其余这些文件/数据路径相对于项目根目录解析。
 - `pcd_path` 用于源文件校验和缓存指纹；`pcd_name` 必须是与其文件名一致的 `.pcd` 文件名，不能包含目录。
 - **当前转换器只向 ROS launch 传递 `pcd_name`，未传递 `pcd_path` 的目录**。ROS 默认从 `src/grid_map/grid_map_pcl/launch/grid_map_pcl_loader_node.launch` 中的 `folder_path` 读取，即项目 `map/pcd/`。建议保留此目录，仅同时修改 `pcd_path` 和 `pcd_name` 的文件名。迁移到其他地图目录时还必须同步修改 launch 的 `folder_path`，确保实际转换的文件与指纹校验的文件相同。
-- `conversion_timeout_s` 为地图转换等待限时；请求中的 `timeout_s` 只限制规划子进程。
+- `conversion_timeout_s` 为地图转换等待限时；请求中的 `timeout_s` 只限制规划子进程。自动转换会依次快速启动高程图、滤波和保存器，节点自行等待上游话题；服务端只等待保存器生成有效的 PGM/YAML，不再逐个用 `rostopic echo` 阻塞中间阶段。
 - 规划器其他算法参数在 `tools/path_creater/config/config.yaml` 中配置；TCP 请求会覆盖本次任务的起终点和地图输入。
 
 地图缓存位于 `var/ground_vehicle_tcp/maps/`。首次请求才转换地图；后续请求校验缓存后可复用，服务重启也可复用。PCD 内容、文件名、原点、代码中记录的转换版本/配置或缓存文件变化会触发重建。指纹不会自动散列所有 ROS 参数文件；手工修改滤波/转换参数后应在服务停止且无任务时清理对应地图缓存，或维护转换版本使其失效。
