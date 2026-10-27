@@ -83,22 +83,22 @@ TCP 字段仍是局部 UTM 偏移（毫米编码），不是 ENU；成功后在�
 
 ## 5. 开机服务
 
-先手动运行并完成一次地图转换和规划，再安装服务：
+先手动运行并完成一次地图转换和规划，再安装服务。仓库单元文件已配置为账号 `union`、项目路径 `/home/union/2.5d-path-creater`：
 
 ```bash
-sudo cp tools/ground_vehicle_tcp/ground-vehicle-tcp.service /etc/systemd/system/
-sudo systemctl edit --full ground-vehicle-tcp.service
+sudo install -m 0644 tools/ground_vehicle_tcp/ground-vehicle-tcp.service \
+  /etc/systemd/system/ground-vehicle-tcp.service
 ```
 
-编辑 `[Service]`：
+如果实际项目路径或账号不同，安装前编辑单元文件中的以下配置：
 
 ```ini
-User=你的部署账号
-WorkingDirectory=/实际路径/2.5d-path-creater
-ExecStart=/bin/bash /实际路径/2.5d-path-creater/scripts/run_vehicle.sh
+User=union
+WorkingDirectory=/home/union/2.5d-path-creater
+ExecStart=/bin/bash /home/union/2.5d-path-creater/scripts/run_vehicle.sh --config /home/union/2.5d-path-creater/tools/ground_vehicle_tcp/config.yaml
 ```
 
-使用同一个部署账号保证文件权限一致，不需要在 systemd 中激活虚拟环境。若 ROS master 位于远端，在服务中设置与手动环境一致的 `ROS_MASTER_URI`、`ROS_IP` 等网络变量。
+使用同一个部署账号保证文件权限一致，不需要在 systemd 中激活虚拟环境。服务会把 ROS 日志写到 `/home/union/.ros/log`。若 ROS master 位于远端，通过 systemd drop-in 设置与手动环境一致的 `ROS_MASTER_URI`、`ROS_IP` 等网络变量。
 
 ```bash
 sudo systemctl daemon-reload

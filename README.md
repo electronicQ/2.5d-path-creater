@@ -309,13 +309,19 @@ magic(2) type(2) length(1) result(1) error_code(1) crc8(1)
 bash scripts/run_vehicle.sh --config tools/ground_vehicle_tcp/config.yaml
 ```
 
-systemd 部署前，先将服务文件中的 `WorkingDirectory` 和 `ExecStart` 中的 `/opt/muti_path_creater` 都改成车端实际项目路径，并配置为部署依赖的普通用户 `User=你的账号`，并确认该路径下已编译生成 `devel/setup.bash`；然后执行：
+配置开机自启前，先停止手动占用 `8079` 的服务，并确认实际路径下已生成 `devel/setup.bash` 和 `.runtime/planner/bin/python`。仓库的 systemd 单元已配置为账号 `union`、项目路径 `/home/union/2.5d-path-creater`；若部署位置或账号不同，先同步修改 `User`、`WorkingDirectory` 和 `ExecStart`：
 
 ```bash
-sudo cp tools/ground_vehicle_tcp/ground-vehicle-tcp.service /etc/systemd/system/
+sudo install -m 0644 \
+  tools/ground_vehicle_tcp/ground-vehicle-tcp.service \
+  /etc/systemd/system/ground-vehicle-tcp.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now ground-vehicle-tcp.service
+systemctl status ground-vehicle-tcp.service --no-pager
+journalctl -u ground-vehicle-tcp.service -f -n 100
 ```
+
+服务启动后可用 `ss -ltnp 'sport = :8079'` 确认监听。服务随系统开机启动，异常退出后会自动重启；修改代码或配置后执行 `sudo systemctl restart ground-vehicle-tcp.service`。
 
 ## 同机验证客户端
 

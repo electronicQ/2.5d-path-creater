@@ -1,14 +1,21 @@
 [Unit]
 Description=Ground vehicle navigation TCP server
-After=roscore.service network-online.target
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/muti_path_creater
-ExecStart=/bin/bash /opt/muti_path_creater/scripts/run_vehicle.sh
+User=union
+WorkingDirectory=/home/union/2.5d-path-creater
+Environment=HOME=/home/union
+Environment=ROS_HOME=/home/union/.ros
+Environment=ROS_LOG_DIR=/home/union/.ros/log
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash /home/union/2.5d-path-creater/scripts/run_vehicle.sh --config /home/union/2.5d-path-creater/tools/ground_vehicle_tcp/config.yaml
 Restart=on-failure
-RestartSec=3
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
 
 [Install]
 WantedBy=multi-user.target

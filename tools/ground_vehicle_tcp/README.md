@@ -117,14 +117,14 @@ ss -ltnp 'sport = :8079'
 
 ### 可选：部署为 systemd 服务
 
-先手动联调成功，再部署开机启动。仓库服务模板默认项目路径为 `/opt/muti_path_creater`，必须先改为实际路径：
+先手动联调成功，再部署开机启动。仓库服务模板已按本部署配置为账号 `union`、项目路径 `/home/union/2.5d-path-creater`；如果实际路径不同，安装前仍需同步修改 `User`、`WorkingDirectory` 和 `ExecStart`：
 
 ```bash
-sudo cp tools/ground_vehicle_tcp/ground-vehicle-tcp.service /etc/systemd/system/
-sudo systemctl edit --full ground-vehicle-tcp.service
+sudo install -m 0644 tools/ground_vehicle_tcp/ground-vehicle-tcp.service \
+  /etc/systemd/system/ground-vehicle-tcp.service
 ```
 
-将 `WorkingDirectory` 和 `ExecStart` 中的 `/opt/muti_path_creater` 同时改为实际项目根目录。`ExecStart` 运行 `scripts/run_vehicle.sh`，自动选择 ROS 和规划解释器；设置 `User=部署脚本使用的普通账号`，并确保该账号有地图读取、输出写入权限。模板引用 `roscore.service` 只定义启动顺序，不会自动创建该服务。
+`ExecStart` 以普通账号运行 `scripts/run_vehicle.sh`，自动选择 ROS 和规划解释器并加载工作空间。ROS master 尚未运行时，由自动转换的首次 `roslaunch` 创建；如果使用远端 ROS master，请在该服务的未提交本地配置或 systemd drop-in 中设置与手动环境一致的 `ROS_MASTER_URI`、`ROS_IP` 等变量。
 
 ```bash
 sudo systemctl daemon-reload
