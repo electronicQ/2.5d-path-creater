@@ -112,8 +112,11 @@ PY
 if [[ -f build/CMakeCache.txt ]]; then
   cached_root=$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' build/CMakeCache.txt)
   [[ $cached_root == "$root_dir/src" ]] || fail "Old build belongs to $cached_root. Move build/ and devel/ aside and rerun."
-  cached_python=$(sed -n 's/^PYTHON_EXECUTABLE:FILEPATH=//p' build/CMakeCache.txt)
-  [[ -z $cached_python || $cached_python == /usr/bin/python2.7 ]] || fail 'Old build uses another Python. Move build/ and devel/ aside before compiling Melodic.'
+  cached_python=$(sed -n 's/^PYTHON_EXECUTABLE:[^=]*=//p' build/CMakeCache.txt)
+  source "$root_dir/scripts/lib/python_cache.sh"
+  if [[ -n $cached_python ]] && ! vehicle_same_python_binary "$cached_python" /usr/bin/python2.7; then
+    fail "Old build Python '$cached_python' differs from /usr/bin/python2.7 (or is unavailable). Move build/ and devel/ aside, then rerun --build-only. Map files and .runtime/ can stay in place."
+  fi
 fi
 if [[ -L src/CMakeLists.txt ]]; then
   # The repository may have retained an absolute Noetic top-level symlink.

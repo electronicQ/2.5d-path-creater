@@ -8,6 +8,8 @@
 
 #include "grid_map_filters/SlidingWindowMathExpressionFilter.hpp"
 
+#include <chrono>
+
 using namespace filters;
 
 namespace grid_map {
@@ -72,6 +74,9 @@ bool SlidingWindowMathExpressionFilter::configure() {
 }
 
 bool SlidingWindowMathExpressionFilter::update(const GridMap& mapIn, GridMap& mapOut) {
+  const auto filterStart = std::chrono::steady_clock::now();
+  ROS_INFO_STREAM("Filter [" << this->getName() << "] started: "
+                  << mapIn.getSize().prod() << " cells");
   mapOut = mapIn;
   mapOut.add(outputLayer_);
   Matrix& outputData = mapOut[outputLayer_];
@@ -88,6 +93,9 @@ bool SlidingWindowMathExpressionFilter::update(const GridMap& mapIn, GridMap& ma
       ROS_ERROR("SlidingWindowMathExpressionFilter could not apply filter because expression has to result in a scalar!");
     }
   }
+  ROS_INFO_STREAM("Filter [" << this->getName() << "] finished in "
+                  << std::chrono::duration<double>(std::chrono::steady_clock::now() - filterStart).count()
+                  << " s");
   return true;
 }
 

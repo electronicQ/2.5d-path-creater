@@ -8,6 +8,8 @@
 
 #include "grid_map_filters/MeanInRadiusFilter.hpp"
 
+#include <chrono>
+
 #include <math.h>
 #include <grid_map_core/grid_map_core.hpp>
 
@@ -49,6 +51,9 @@ bool MeanInRadiusFilter::configure() {
 }
 
 bool MeanInRadiusFilter::update(const GridMap& mapIn, GridMap& mapOut) {
+  const auto filterStart = std::chrono::steady_clock::now();
+  ROS_INFO_STREAM("Filter [" << this->getName() << "] started: "
+                  << mapIn.getSize().prod() << " cells");
   // Add new layers to the elevation map.
   mapOut = mapIn;
   mapOut.add(outputLayer_);
@@ -78,6 +83,9 @@ bool MeanInRadiusFilter::update(const GridMap& mapIn, GridMap& mapOut) {
     }
   }
 
+  ROS_INFO_STREAM("Filter [" << this->getName() << "] finished in "
+                  << std::chrono::duration<double>(std::chrono::steady_clock::now() - filterStart).count()
+                  << " s");
   return true;
 }
 

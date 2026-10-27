@@ -9,6 +9,8 @@
 
 #include "grid_map_demos/FiltersDemo.hpp"
 
+#include <chrono>
+
 using namespace grid_map;
 
 namespace grid_map_demos {
@@ -60,9 +62,14 @@ bool FiltersDemo::readParameters()
 
 void FiltersDemo::callback(const grid_map_msgs::GridMap& message)
 {
+  const auto callbackStart = std::chrono::steady_clock::now();
+  ROS_INFO("Received elevation map; converting ROS message before filtering.");
   // Convert message to map.
   GridMap inputMap;
   GridMapRosConverter::fromMessage(message, inputMap);
+
+  ROS_INFO_STREAM("Elevation map ready: " << inputMap.getSize().transpose()
+                  << " cells, resolution " << inputMap.getResolution() << " m. Starting filter chain.");
 
   // Apply filter chain.
   grid_map::GridMap outputMap;
@@ -71,11 +78,16 @@ void FiltersDemo::callback(const grid_map_msgs::GridMap& message)
     return;
   }
 
-  ROS_INFO("PUBLISH");
+  ROS_INFO_STREAM("Filter chain finished after "
+                  << std::chrono::duration<double>(std::chrono::steady_clock::now() - callbackStart).count()
+                  << " s including input conversion; serializing output.");
   // Publish filtered output grid map.
   grid_map_msgs::GridMap outputMessage;
   GridMapRosConverter::toMessage(outputMap, outputMessage);
   publisher_.publish(outputMessage);
+  ROS_INFO_STREAM("Filtered map published; total callback time "
+                  << std::chrono::duration<double>(std::chrono::steady_clock::now() - callbackStart).count()
+                  << " s");
   // ================= 添加以下代码自动保存 =================
   // std::string savePath = "/home/cclg/A2B_Project/A2B_ws/src/grid_map/grid_map_filters/bag/final_map.bag"; // 改成你想要的绝对路径
   // grid_map::GridMapRosConverter::saveToBag(outputMap, savePath, outputTopic_);

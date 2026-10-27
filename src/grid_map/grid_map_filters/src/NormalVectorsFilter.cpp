@@ -8,6 +8,8 @@
 
 #include "grid_map_filters/NormalVectorsFilter.hpp"
 
+#include <chrono>
+
 #include <math.h>
 #include <memory>
 #include <stdexcept>
@@ -125,6 +127,9 @@ bool NormalVectorsFilter::configure() {
 }
 
 bool NormalVectorsFilter::update(const GridMap& mapIn, GridMap& mapOut) {
+  const auto filterStart = std::chrono::steady_clock::now();
+  ROS_INFO_STREAM("Filter [" << this->getName() << "] started: "
+                  << mapIn.getSize().prod() << " cells");
   std::vector<std::string> normalVectorsLayers;
   normalVectorsLayers.push_back(outputLayersPrefix_ + "x");
   normalVectorsLayers.push_back(outputLayersPrefix_ + "y");
@@ -149,6 +154,9 @@ bool NormalVectorsFilter::update(const GridMap& mapIn, GridMap& mapOut) {
       break;
   }
 
+  ROS_INFO_STREAM("Filter [" << this->getName() << "] finished in "
+                  << std::chrono::duration<double>(std::chrono::steady_clock::now() - filterStart).count()
+                  << " s");
   return true;
 }
 

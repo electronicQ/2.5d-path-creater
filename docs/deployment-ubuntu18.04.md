@@ -119,7 +119,7 @@ sudo journalctl -u ground-vehicle-tcp.service -f
 | Python 3 导入 ROS Python 2 的 yaml 报语法错误 | 使用运行脚本；单独跑规划器/测试时加 `env -u PYTHONPATH -u PYTHONHOME` |
 | 缺少 TBBConfig.cmake | 本分支包含经典 TBB 查找模块；确认已安装 `libtbb-dev` 且使用本分支源码 |
 | task_scheduler_init.h 缺失 | 使用 18.04 经典 TBB，不要混入 oneTBB 2021 的头文件 |
-| catkin 报 Python 或 CMake 缓存不匹配 | 备份并移走旧 `build/`、`devel/`，重新部署；不要强行复用 Noetic 构建目录 |
+| catkin 报 Python 或 CMake 缓存不匹配 | 检查 `build/CMakeCache.txt` 的 `PYTHON_EXECUTABLE`；脚本接受解析到系统 Python 2.7 的别名。若是另一解释器或已失效路径，备份移走 `build/`、`devel/` 后运行 `--build-only`；保留地图和 `.runtime/` |
 | 编译进程被 killed | 通常是内存不足，先用 `--jobs 1` 并检查系统内存/内核日志 |
 | 服务能连上但地图转换失败 | 检查任务 `job.log`、PCD 路径、原点和 ROS 话题，确认没有其他转换节点冲突 |
 
@@ -137,3 +137,30 @@ sudo journalctl -u ground-vehicle-tcp.service -f
 - 在隔离的 Melodic 工作区，通过合成 PCD 的真实 ROS 转换和两次 TCP 规划请求；均返回成功，九个文件通过数值/格式校验，第二次请求复用地图缓存。对应测试为 `tests/deployment/smoke_melodic_pipeline.py`，文件开头附专用测试工作区中的执行方式。该测试使用固定转换节点名和输出话题，只在隔离工作区运行。
 
 以上验证使用 amd64 容器；真实工控机上的原始点云、内存容量、网络和下游循迹仍需现场验收。其他 CPU 架构尚未完成同等验证。
+
+
+## 8. 大地图滤波长时间运行：先检查编译优化
+
+若 `filters_demo` 持续占用约一个 CPU 核心、没有交换读写但十几分钟仍未完成，先检查：
+
+```bash
+grep -E '^(CMAKE_BUILD_TYPE|CMAKE_CXX_FLAGS(_RELEASE)?):' build/CMakeCache.txt
+```
+
+`CMAKE_BUILD_TYPE:STRING=` 为空时，不能因为存在 `CMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG` 就认为已启用优化；这些 Release 参数仅在选择 Release 构建时生效。大量 Eigen 运算和邻域迭代在未优化构建下可能非常慢。
+
+先用 Ctrl+C 停止正在运行的两个地图转换/滤波 roslaunch，退出 conda，然后在项目根目录执行：
+
+```bash
+source /opt/ros/melodic/setup.bash
+catkin_make -DCMAKE_BUILD_TYPE=Release \
+  -DPYTHON_EXECUTABLE=/usr/bin/python2.7 \
+  -DCATKIN_ENABLE_TESTING=OFF -j2 -l2
+source devel/setup.bash
+```
+
+通常无需删除 `build/` 和 `devel/`，更改构建类型会触发重新编译。检查缓存中的构建类型已变成 `Release`，再重启节点。若整个部署环境已经准备好，也可运行 `bash scripts/deploy_vehicle.sh --build-only --jobs 2`，其中已显式设置 Release。
+
+先保持原地图分辨率、邻域半径及 `area` 法向量算法。先用原串行配置确认 Release 重编译带来的改善；若仍需加速，再显式启用法向量的 `parallelization_enabled: true` 和 `thread_number: 4`。均值平滑和滑窗表达式阶段仍为串行。接收地图、主要滤波阶段开始/结束和输出发布均增加耗时日志，用于区分等消息、均值平滑、法向量、边缘计算与序列化开销。
+
+地图点云转换和可通行地图导出无需打开 RViz，可在手动 roslaunch 时传入 `enable_rviz:=false`。关闭 RViz 后，应先在另一个已加载 `devel/setup.bash` 的终端运行 `/usr/bin/python2.7 tools/pgm_saver/save_continuous_map.py`，再启动滤波 launch；可视化节点需要有输出订阅者才会订阅并转换地图，保存器提供占据栅格订阅。不要仅凭整体 CPU 空闲率断言节点未工作：12 个逻辑 CPU 中一个核满载，进程通常显示约 100% CPU。
