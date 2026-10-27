@@ -72,6 +72,39 @@ class MelodicRuntimeTest(unittest.TestCase):
         self.assertEqual(PipelineRunner(Path('.'), env={'VEHICLE_ROS_PYTHON': '/custom/python'}).ros_python,
                          '/custom/python')
 
+    def test_map_conversion_does_not_launch_unused_point_cloud_publisher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / 'map_enu'
+            Path(str(output) + '.pgm').write_bytes(b'P5\n1 1\n255\n\xff')
+            Path(str(output) + '.yaml').write_text(
+                'image: map_enu.pgm\nresolution: 0.5\norigin: [0, 0, 0]\n',
+                encoding='utf-8',
+            )
+            runner = PipelineRunner(root, env={'ROS_DISTRO': 'noetic'})
+            commands = []
+
+            class FakeProcess:
+                returncode = 0
+
+                def poll(self):
+                    return 0
+
+            def record_start(command, log_path):
+                commands.append(command)
+                return FakeProcess()
+
+            with patch.object(runner, '_start', side_effect=record_start), \
+                    patch.object(runner, '_wait_topic'):
+                runner.convert('scans_Global_ENU.pcd', output, root / 'job.log')
+
+            self.assertEqual(commands[0], [
+                'roslaunch', 'grid_map_pcl', 'grid_map_pcl_loader_node.launch',
+                'pcd_filename:=scans_Global_ENU.pcd',
+                'enable_rviz:=false',
+                'publish_point_cloud:=false',
+            ])
+
     def test_binary_pgm_preserves_grayscale_flip_and_yaml_origin(self):
         with tempfile.TemporaryDirectory() as directory:
             node = saver.ContinuousMapSaver.__new__(saver.ContinuousMapSaver)

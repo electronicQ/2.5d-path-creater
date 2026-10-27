@@ -78,6 +78,7 @@ class PipelineRunner:
             self._start([
                 "roslaunch", "grid_map_pcl", "grid_map_pcl_loader_node.launch",
                 "pcd_filename:=" + pcd_name, "enable_rviz:=" + str(rviz).lower(),
+                "publish_point_cloud:=false",
             ], log_path)
             self._wait_topic("/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud", log_path, deadline)
             self._start([
