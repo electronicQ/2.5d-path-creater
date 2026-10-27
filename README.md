@@ -107,6 +107,121 @@ cat tools/path_creater/config/map_enu.meta.yaml
 
 点云需要通过 U 盘、SCP 或 SFTP 等方式提前复制到工控机。当前 TCP 接口只接收规划请求，不负责上传这两个文件；部署脚本也不会生成真实点云或自动确定地图原点。
 
+## 手动调试
+
+以下以 **Ubuntu 18.04 + ROS Melodic** 为例，按“PCD → 高程栅格 → 可通行栅格 → PGM/YAML → 轨迹”的顺序逐步验证。先完成上述自动部署，并准备好点云和原点文件。示例工程目录为 `/home/union/2.5d-path-creater`，放在其他位置时修改各命令中的 `cd` 路径即可，无需修改保存脚本。
+
+手动调试期间先停止 TCP 服务，避免它启动同名的地图转换节点。如果通过 systemd 启动了服务，执行 `sudo systemctl stop ground-vehicle-tcp.service`；如果在终端运行了 `scripts/run_vehicle.sh`，在对应终端按 Ctrl+C。
+
+### 1. 各 ROS 终端加载环境
+
+下面的终端 A、B、C **都先执行一次**：
+
+```bash
+# 如果终端显示 (base)，先执行 conda deactivate；有多层环境时重复退出
+cd /home/union/2.5d-path-creater
+source /opt/ros/melodic/setup.bash
+source devel/setup.bash
+```
+
+若刚更新了滤波代码或尚未以 Release 编译，先在项目根目录执行一次，完成后重新加载 `devel/setup.bash`：
+
+```bash
+bash scripts/deploy_vehicle.sh --build-only --jobs 2
+source devel/setup.bash
+```
+
+### 2. 终端 A：将 PCD 转为高程栅格
+
+这里用你工控机上的 `scans_enu.pcd` 举例；如果文件名不同，修改 `pcd_filename`。文件应位于项目的 `map/pcd/` 中。
+
+```bash
+ls -lh map/pcd/scans_enu.pcd
+roslaunch grid_map_pcl grid_map_pcl_loader_node.launch \
+  pcd_filename:=scans_enu.pcd \
+  enable_rviz:=false publish_point_cloud:=false
+```
+
+该命令会自动启动本地 ROS master（尚未运行时）、读取点云并生成高程栅格。看到 `Saving grid map successful: true` 表示这一阶段完成。默认还会保存 `map/pcd/output_grid_map.bag`，并通过 `/grid_map_pcl_loader_node/grid_map_from_raw_pointcloud` 发布高程地图。
+
+**保持终端 A 运行**，后续滤波节点需要接收它发布的地图。这里尚未生成规划需要的 PGM。
+
+### 3. 终端 B：先启动地图保存器，等待数据
+
+在终端 B 加载第 1 步的 ROS 环境后执行：
+
+```bash
+/usr/bin/python2.7 tools/pgm_saver/save_continuous_map.py -n map_enu
+```
+
+出现“等待地图数据”是正常状态。保存器订阅 `/grid_map_visualization/traversability_grid`，此时先等待下一步输出。不要使用 Conda 的 `python` 运行它。
+
+必须先启动保存器再启动无 RViz 的滤波流程：可视化节点在有输出订阅者时才会订阅并转换地图，保存器提供所需的占据栅格订阅。
+
+### 4. 终端 C：滤波并发布可通行栅格
+
+在终端 C 加载第 1 步的 ROS 环境后执行：
+
+```bash
+roslaunch grid_map_demos filters_demo_gai.launch enable_rviz:=false
+```
+
+该步骤执行平滑、法向量和可通行性等滤波，将结果交给可视化节点转换为占据栅格。滤波耗时日志可用于判断具体停在哪个阶段；大地图仍可能需要数分钟，详见 [18.04 大地图排障](docs/deployment-ubuntu18.04.md#8-大地图滤波长时间运行先检查编译优化)。如需 RViz 查看，可将 `enable_rviz` 改为 `true`，但大地图显示会增加开销。
+
+终端 B 收到数据后会保存文件并自动退出：
+
+```text
+/home/union/2.5d-path-creater/map/pgm/map_enu.pgm
+/home/union/2.5d-path-creater/map/pgm/map_enu.yaml
+```
+
+在终端 B 检查：
+
+```bash
+ls -lh map/pgm/map_enu.pgm map/pgm/map_enu.yaml
+cat map/pgm/map_enu.yaml
+```
+
+`-n map_enu` 与下一步默认规划配置中的文件名对应。保存器自动依据工程位置确定目录；不要写死 `/home/union/...`。生成的 `map_enu.yaml` 保存栅格分辨率和局部地图原点，**原点经纬高另由 `map_enu.meta.yaml` 提供**，两个 YAML 用途不同。
+
+确认保存成功后，可以在终端 C、A 分别按 Ctrl+C 释放资源；后续离线规划不依赖 ROS 节点继续运行。
+
+### 5. 配置规划地图与实际起终点
+
+编辑 `tools/path_creater/config/config.yaml`，保留已有规划参数，核对以下字段：
+
+```yaml
+map_yaml: ../../../map/pgm/map_enu.yaml
+map_meta: map_enu.meta.yaml
+output_dir: ../../../output
+```
+
+这里的相对路径以配置文件所在目录 `tools/path_creater/config/` 为基准。`map_meta` 对应前面准备的 `tools/path_creater/config/map_enu.meta.yaml`，必须与点云的 ENU 原点一致。
+
+再将配置中的 `start` 和 `goal` 改为实际起终点的 `latitude`、`longitude`、`altitude`：经纬度单位为度，高度单位为米，不能直接沿用仓库示例。**离线规划配置接收经纬高；TCP 客户端接收局部 UTM 米制偏移，两种输入不能直接混用。** 起终点应在地图内，并留出配置中障碍膨胀所需的通行空间。
+
+### 6. 运行离线规划并查看输出
+
+在项目根目录执行（可复用终端 B）：
+
+```bash
+cd /home/union/2.5d-path-creater
+env -u PYTHONPATH -u PYTHONHOME .runtime/planner/bin/python \
+  -m tools.path_creater.main --config tools/path_creater/config/config.yaml
+```
+
+该命令只读取已保存的地图并规划，不会重新转换 PCD，也不需要先启动 TCP 服务。成功后检查：
+
+```bash
+ls -lh output/traj_*_enu.csv output/traj_*_geo.csv
+ls -lh output/road_map1.xml output/road_map2.xml output/road_map3.xml
+ls -lh output/overlay.png output/config.resolved.yaml
+```
+
+默认输出三种策略共六个 CSV、三个 XML，以及启用时的路径叠加图和解析配置。`*_enu.csv` 是局部 ENU 米制坐标，`*_geo.csv` 是经纬度；`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标。可打开 `output/overlay.png` 检查路径是否落在预期道路上。
+
+只调整起终点或规划权重时，修改配置并重复第 6 步即可；更换点云或滤波参数时，需要重新执行第 2～4 步保存地图。手动生成的地图不会自动登记进 TCP 服务的地图缓存；恢复正常服务时先停止手动 ROS launch，再运行 `bash scripts/run_vehicle.sh`，服务按自身缓存流程处理请求。
+
 ## 部署分工与功能边界
 
 - **无人车工控机（服务端）**：运行本项目，监听 TCP `8079`，读取车端已有点云地图，执行地图转换和全局轨迹规划，将结果文件保存到车端。
