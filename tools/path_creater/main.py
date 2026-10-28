@@ -15,6 +15,7 @@ from .clearance import build_clearance_from_free
 from .curve_smoothing import (
     CurveSmoothingConfig,
     TrackingSamplingConfig,
+    ensure_path_endpoints,
     smooth_and_adaptive_sample_path,
 )
 from .geo import GeoPoint, enu_to_geodetic, geodetic_to_enu, geodetic_to_local_utm
@@ -247,6 +248,7 @@ def main(argv: Optional[list] = None) -> int:
             curve_cfg,
             sampling_cfg,
         )
+        enu_points = ensure_path_endpoints(enu_points, control_points[0], control_points[-1])
         curve_elapsed = time.perf_counter() - curve_start
 
         write_start = time.perf_counter()

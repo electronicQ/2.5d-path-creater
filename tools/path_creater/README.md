@@ -24,7 +24,7 @@ output/overlay.png
 - `road_map1.xml`：代价感知（`cost_aware`）轨迹的局部 UTM XML。
 - `road_map2.xml`：距离优先（`distance`）轨迹的局部 UTM XML。
 - `road_map3.xml`：平滑优先（`smooth`）轨迹的局部 UTM XML。
-- `overlay.png`：在 PGM 地图上绘制三组互不相连的轨迹点，以及起点和终点。
+- `overlay.png`：在 PGM 地图上使用细线连接每组轨迹点，并保留轨迹点标记以及起点和终点。
 
 局部 UTM 坐标的定义为：
 

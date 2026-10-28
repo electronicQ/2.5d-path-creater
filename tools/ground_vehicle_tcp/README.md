@@ -289,7 +289,7 @@ except (OSError, ValueError) as exc:
 
 ## 8. 第六步：确认和使用车端输出
 
-成功响应发出前，车端会检查三个 `road_map*.xml` 非空、可解析且顶点坐标有效；随后将三份 XML 和 `overlay.png` 逐文件原子替换到规划配置中的 `output_dir`（默认项目根目录 `output/`）。TCP 规划会强制启用叠加图，`output/overlay.png` 使用三份 XML 对应的自适应轨迹点在 PGM 上绘制三组互不相连的点轨迹以及起终点。
+成功响应发出前，车端会检查三个 `road_map*.xml` 非空、可解析且顶点坐标有效；随后将三份 XML 和 `overlay.png` 逐文件原子替换到规划配置中的 `output_dir`（默认项目根目录 `output/`）。TCP 规划会强制启用叠加图，`output/overlay.png` 使用三份 XML 对应的自适应轨迹点，以同色细线连接同一条轨迹的相邻点，并保留轨迹点、起点和终点标记。
 
 | 策略 | XML |
 | --- | --- |

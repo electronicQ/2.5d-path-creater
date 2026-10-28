@@ -232,7 +232,7 @@ ls -lh output/road_map1.xml output/road_map2.xml output/road_map3.xml
 ls -lh output/overlay.png
 ```
 
-默认只输出三个 XML 和一张路径叠加图。`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标和形状自适应轨迹点。`overlay.png` 在 PGM 上绘制三组互不相连的轨迹点以及起终点。
+默认只输出三个 XML 和一张路径叠加图。`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标和形状自适应轨迹点。`overlay.png` 使用细线连接同一条轨迹的相邻点，同时保留彩色轨迹点标记以及起终点。
 
 只调整起终点或规划权重时，修改配置并重复第 6 步即可；更换点云或滤波参数时，需要重新执行第 2～4 步保存地图。手动生成的地图不会自动登记进 TCP 服务的地图缓存；恢复正常服务时先停止手动 ROS launch，再运行 `bash scripts/run_vehicle.sh`，服务按自身缓存流程处理请求。
 

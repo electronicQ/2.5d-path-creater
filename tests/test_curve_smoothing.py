@@ -5,6 +5,7 @@ from tools.path_creater.curve_smoothing import (
     CurveSmoothingConfig,
     TrackingSamplingConfig,
     adaptive_resample_path,
+    ensure_path_endpoints,
     smooth_and_sample_path,
 )
 
@@ -72,6 +73,27 @@ class AdaptiveTrackingSamplingTest(unittest.TestCase):
         lengths = self.segment_lengths(sampled)
         self.assertGreaterEqual(min(lengths), 0.25)
         self.assertLessEqual(max(lengths), 0.8)
+
+    def test_adaptive_sampling_keeps_exact_start_and_goal(self):
+        start = (1.25, 2.5)
+        goal = (15.75, 20.5)
+        sampled = adaptive_resample_path(
+            [start, (10.0, 2.5), goal],
+            TrackingSamplingConfig(),
+        )
+
+        self.assertEqual(sampled[0], start)
+        self.assertEqual(sampled[-1], goal)
+
+    def test_endpoint_guard_inserts_missing_start_and_goal(self):
+        start = (0.1, 0.2)
+        goal = (20.3, 40.4)
+        points = [(10.0, 20.0), (20.0, 40.0)]
+
+        guarded = ensure_path_endpoints(points, start, goal)
+
+        self.assertEqual(guarded[0], start)
+        self.assertEqual(guarded[-1], goal)
 
 
 if __name__ == "__main__":

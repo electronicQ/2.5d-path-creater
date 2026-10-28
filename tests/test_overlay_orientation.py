@@ -52,7 +52,7 @@ class OverlayOrientationTest(unittest.TestCase):
             self.assertEqual(img.getpixel((0, 0)), (255, 255, 0))
             self.assertEqual(img.getpixel((0, 4)), (220, 40, 40))
 
-    def test_tracking_points_are_not_connected_by_lines(self):
+    def test_tracking_points_and_thin_connecting_lines_are_visible(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "points.png"
             gray = np.full((10, 10), 200, dtype=np.uint8)
@@ -73,14 +73,15 @@ class OverlayOrientationTest(unittest.TestCase):
             write_overlay(
                 omap,
                 np.ones((10, 10), dtype=bool),
-                {"distance": [(0, 0), (0, 9)]},
+                {"distance": [(0, 5), (9, 5)]},
                 out,
                 (9, 0),
                 (9, 1),
             )
 
             image = Image.open(out).convert("RGB")
-            self.assertNotEqual(image.getpixel((0, 4)), (220, 40, 40))
+            self.assertEqual(image.getpixel((5, 4)), (220, 40, 40))
+            self.assertEqual(image.getpixel((5, 0)), (220, 40, 40))
 
 
 if __name__ == "__main__":

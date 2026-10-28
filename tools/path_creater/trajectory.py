@@ -162,7 +162,7 @@ def write_overlay(
     start: GridPoint,
     goal: GridPoint,
 ) -> None:
-    """Render grayscale map with discrete colored tracking points."""
+    """Render grayscale map with thin colored paths and tracking-point markers."""
     # occ visualized: white=free, black=occupied
     gray = (255.0 * (1.0 - np.clip(omap.occ, 0.0, 1.0))).astype(np.uint8)
     # Mark inflated obstacles slightly darker gray for context
@@ -181,6 +181,27 @@ def write_overlay(
     h = omap.height
     image = Image.fromarray(vis, mode="RGB")
     draw = ImageDraw.Draw(image)
+
+    for name, points in paths.items():
+        color = colors.get(name, (255, 255, 0))
+        display_points = []
+        for r, c in points:
+            ir = h - 1 - r
+            if 0 <= ir < h and 0 <= c < omap.width:
+                display_points.append((int(c), int(ir)))
+        if len(display_points) >= 2:
+            draw.line(display_points, fill=color, width=1)
+
+    for r, c, color in (
+        (start[0], start[1], (255, 255, 0)),
+        (goal[0], goal[1], (255, 0, 255)),
+    ):
+        ir = h - 1 - r
+        draw.ellipse(
+            (int(c) - 3, int(ir) - 3, int(c) + 3, int(ir) + 3),
+            fill=color,
+        )
+
     point_radius = 2
     for name, points in paths.items():
         color = colors.get(name, (255, 255, 0))
@@ -196,16 +217,6 @@ def write_overlay(
                     ),
                     fill=color,
                 )
-
-    for r, c, color in (
-        (start[0], start[1], (255, 255, 0)),
-        (goal[0], goal[1], (255, 0, 255)),
-    ):
-        ir = h - 1 - r
-        draw.ellipse(
-            (int(c) - 3, int(ir) - 3, int(c) + 3, int(ir) + 3),
-            fill=color,
-        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(out_path)

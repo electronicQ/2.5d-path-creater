@@ -279,3 +279,17 @@ def smooth_and_adaptive_sample_path(
     if _segments_are_safe(sampled, is_segment_free):
         return sampled
     return adaptive_resample_path(base, sampling_cfg)
+
+
+def ensure_path_endpoints(points: Sequence[Point], start: Point, end: Point) -> List[Point]:
+    """Ensure every generated tracking path contains its exact start and end."""
+    result = [_clean_point(point) for point in points]
+    clean_start = _clean_point(start)
+    clean_end = _clean_point(end)
+    if not result:
+        return [clean_start, clean_end] if _distance(clean_start, clean_end) > 1e-9 else [clean_start]
+    if _distance(result[0], clean_start) > 1e-9:
+        result.insert(0, clean_start)
+    if _distance(result[-1], clean_end) > 1e-9:
+        result.append(clean_end)
+    return result
