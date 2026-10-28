@@ -213,11 +213,11 @@ def write_overlay(
                 x = int(c)
                 y = int(ir)
                 if name == "cost_aware":
-                    draw.rectangle((x - 5, y - 5, x + 5, y + 5), fill=color)
+                    draw.rectangle((x - 2, y - 2, x + 2, y + 2), fill=color)
                 elif name == "smooth":
-                    draw.polygon(((x, y - 5), (x - 5, y + 4), (x + 5, y + 4)), fill=color)
+                    draw.polygon(((x, y - 2), (x - 2, y + 1), (x + 2, y + 1)), fill=color)
                 else:
-                    draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=color)
+                    draw.point((x, y), fill=color)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(out_path)
