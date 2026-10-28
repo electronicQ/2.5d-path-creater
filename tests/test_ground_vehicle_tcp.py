@@ -4,8 +4,10 @@ import asyncio
 from pathlib import Path
 
 import yaml
+from PIL import Image
 
 from tools.ground_vehicle_tcp.map_cache import MapCache
+from tools.ground_vehicle_tcp.pipeline import PipelineError
 from tools.ground_vehicle_tcp.server import NavigationServer
 from tools.ground_vehicle_tcp.workflow import NavigationWorkflow
 from tools.ground_vehicle_tcp.protocol import (
@@ -132,6 +134,7 @@ class NavigationWorkflowErrorTest(unittest.TestCase):
                     (output_dir / name).write_text(
                         '<map><vertex x="0" y="0" yaw="0" /></map>\n', encoding="utf-8"
                     )
+                Image.new("RGB", (2, 2), (255, 255, 255)).save(str(output_dir / "overlay.png"))
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -156,6 +159,48 @@ class NavigationWorkflowErrorTest(unittest.TestCase):
             self.assertEqual(FakeRunner.configs[0]["output_dir"].split("/")[-1], "output")
             self.assertTrue((root / "output" / "road_map1.xml").is_file())
             self.assertTrue((root / "output" / "traj_smooth_enu.csv").is_file())
+            self.assertTrue((root / "output" / "overlay.png").is_file())
+
+
+class NavigationOutputValidationTest(unittest.TestCase):
+    @staticmethod
+    def write_outputs(output_dir, include_overlay=True):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for name in (
+            "traj_distance_geo.csv", "traj_smooth_geo.csv", "traj_cost_aware_geo.csv",
+        ):
+            (output_dir / name).write_text("latitude,longitude\n0,0\n", encoding="utf-8")
+        for name in (
+            "traj_distance_enu.csv", "traj_smooth_enu.csv", "traj_cost_aware_enu.csv",
+        ):
+            (output_dir / name).write_text("x,y\n0,0\n", encoding="utf-8")
+        for name in ("road_map1.xml", "road_map2.xml", "road_map3.xml"):
+            (output_dir / name).write_text(
+                '<map><vertex x="0" y="0" yaw="0" /></map>\n', encoding="utf-8"
+            )
+        if include_overlay:
+            Image.new("RGB", (2, 2), (255, 255, 255)).save(str(output_dir / "overlay.png"))
+
+    def test_validates_and_publishes_map_overlay(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            destination = root / "output"
+            self.write_outputs(source)
+
+            NavigationWorkflow._validate_outputs(source)
+            NavigationWorkflow._publish_outputs(source, destination)
+
+            self.assertTrue((destination / "overlay.png").is_file())
+            self.assertEqual((destination / "overlay.png").read_bytes(), (source / "overlay.png").read_bytes())
+
+    def test_rejects_missing_map_overlay(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "output"
+            self.write_outputs(output, include_overlay=False)
+
+            with self.assertRaisesRegex(PipelineError, "invalid map overlay"):
+                NavigationWorkflow._validate_outputs(output)
 
 
 class LocalUtmConversionTest(unittest.TestCase):

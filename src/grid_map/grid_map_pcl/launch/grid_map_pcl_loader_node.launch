@@ -2,7 +2,7 @@
 
 <launch>
   <arg name="folder_path"            default="$(find grid_map_pcl)/../../../map/pcd"/>
-  <arg name="pcd_filename"           default="auto" />
+  <arg name="pcd_filename"           default="scans_Global_ENU.pcd" />
   <arg name="configFilePath_"       default="$(find grid_map_pcl)/config/parameters.yaml" />
   <arg name="map_rosbag_topic"       default="grid_map" />
   <arg name="output_grid_map"        default="$(find grid_map_pcl)/../../../map/pcd/output_grid_map.bag" />

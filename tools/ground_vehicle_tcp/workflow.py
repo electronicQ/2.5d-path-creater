@@ -6,6 +6,7 @@ import csv
 import math
 import os
 import shutil
+import struct
 import tempfile
 import uuid
 import xml.etree.ElementTree as ET
@@ -84,6 +85,7 @@ class NavigationWorkflow:
                 }, stream, sort_keys=False)
             config["map_meta"] = str(snapshot_meta.resolve())
             config["output_dir"] = str((job_dir / "output").resolve())
+            config["write_overlay"] = True
             config_path = job_dir / "planner-config.yaml"
             with config_path.open("w", encoding="utf-8") as stream:
                 yaml.safe_dump(config, stream, sort_keys=False, allow_unicode=True)
@@ -149,6 +151,17 @@ class NavigationWorkflow:
                             raise ValueError("non-finite {} coordinate".format(field))
             except (OSError, ValueError, KeyError, ET.ParseError) as exc:
                 raise PipelineError("OUTPUT_INVALID", "invalid trajectory XML {}: {}".format(name, exc)) from exc
+        overlay_path = output_dir / "overlay.png"
+        try:
+            with overlay_path.open("rb") as stream:
+                header = stream.read(24)
+            if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+                raise ValueError("invalid PNG header")
+            width, height = struct.unpack(">II", header[16:24])
+            if width == 0 or height == 0:
+                raise ValueError("zero-sized PNG")
+        except (OSError, ValueError, struct.error) as exc:
+            raise PipelineError("OUTPUT_INVALID", "invalid map overlay: {}".format(exc)) from exc
 
     def _configured_output_dir(self, config: Dict) -> Path:
         value = Path(str(config.get("output_dir", "../../../output")))
@@ -161,7 +174,7 @@ class NavigationWorkflow:
         names = (
             "traj_distance_geo.csv", "traj_distance_enu.csv", "traj_smooth_geo.csv",
             "traj_smooth_enu.csv", "traj_cost_aware_geo.csv", "traj_cost_aware_enu.csv",
-            "road_map1.xml", "road_map2.xml", "road_map3.xml",
+            "road_map1.xml", "road_map2.xml", "road_map3.xml", "overlay.png",
         )
         destination_dir.mkdir(parents=True, exist_ok=True)
         for name in names:

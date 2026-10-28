@@ -133,12 +133,12 @@ source devel/setup.bash
 
 ### 2. 终端 A：将 PCD 转为高程栅格
 
-这里用你工控机上的 `scans_enu.pcd` 举例；如果文件名不同，修改 `pcd_filename`。文件应位于项目的 `map/pcd/` 中。
+手动转换默认使用 `scans_Global_ENU.pcd`，文件应位于项目的 `map/pcd/` 中；如需转换其他文件，显式传入 `pcd_filename`。
 
 ```bash
-ls -lh map/pcd/scans_enu.pcd
+ls -lh map/pcd/scans_Global_ENU.pcd
 roslaunch grid_map_pcl grid_map_pcl_loader_node.launch \
-  pcd_filename:=scans_enu.pcd \
+  pcd_filename:=scans_Global_ENU.pcd \
   enable_rviz:=false publish_point_cloud:=false
 ```
 
@@ -276,6 +276,7 @@ output/traj_cost_aware_enu.csv
 output/road_map1.xml
 output/road_map2.xml
 output/road_map3.xml
+output/overlay.png
 ```
 
 `road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别对应代价感知、距离优先和平滑优先轨迹，坐标是以 ENU 原点为参考的局部 UTM 偏移，单位为米。

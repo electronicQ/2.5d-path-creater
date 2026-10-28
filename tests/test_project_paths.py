@@ -27,7 +27,7 @@ class ProjectPathConventionTest(unittest.TestCase):
     def test_grid_map_pcl_defaults_read_from_project_map_pcd(self):
         defaults = launch_arg_defaults()
         self.assertEqual(defaults["folder_path"], "$(find grid_map_pcl)/../../../map/pcd")
-        self.assertEqual(defaults["pcd_filename"], "auto")
+        self.assertEqual(defaults["pcd_filename"], "scans_Global_ENU.pcd")
         self.assertIn("../../../map/pcd", defaults["output_grid_map"])
 
     def test_map_saver_default_output_base_is_project_map_pgm(self):

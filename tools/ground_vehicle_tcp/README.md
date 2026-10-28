@@ -289,7 +289,7 @@ except (OSError, ValueError) as exc:
 
 ## 8. 第六步：确认和使用车端输出
 
-成功响应发出前，车端会检查九个文件非空、CSV 表头和数值有效、XML 可解析且顶点坐标有效，再逐文件原子替换到规划配置中的 `output_dir`（默认项目根目录 `output/`）。
+成功响应发出前，车端会检查九个 CSV/XML 文件非空、CSV 表头和数值有效、XML 可解析且顶点坐标有效，并验证 `overlay.png` 是有效的非空 PNG；随后逐文件原子替换到规划配置中的 `output_dir`（默认项目根目录 `output/`）。TCP 规划会强制启用叠加图，`output/overlay.png` 展示 PGM 地图、三种轨迹以及起终点。
 
 | 策略 | 经纬度 CSV（表头 latitude,longitude） | ENU CSV（表头 x,y） | XML |
 | --- | --- | --- | --- |
@@ -303,13 +303,13 @@ CSV 经纬度使用角度，ENU 使用米。XML 的 `x/y` 为局部 UTM 偏移�
 
 ```bash
 cd /home/gzq/2.5d-path-creater
-ls -lh output/traj_*.csv output/road_map*.xml
+ls -lh output/traj_*.csv output/road_map*.xml output/overlay.png
 ls -lt var/ground_vehicle_tcp/jobs/
 ```
 
 每个任务保存在 `var/ground_vehicle_tcp/jobs/<内部任务目录>/`，含 `job.log`、本次规划配置和输出；该内部目录名不会通过 TCP 回传。地图准备早期失败时日志可能不完整，需结合服务终端或 systemd 日志排查。
 
-**必须等到本次成功响应后才读取标准输出文件**。原子替换只保证单个文件完整，九个文件不是一次事务；失败时标准目录可能仍是旧结果，或包含部分已替换文件，不能仅凭文件存在判断本次成功。后续请求还会覆盖标准文件，需要保留结果时应在下一次请求前归档，并协调下游读取。
+**必须等到本次成功响应后才读取标准输出文件**。原子替换只保证单个文件完整，十个文件不是一次事务；失败时标准目录可能仍是旧结果，或包含部分已替换文件，不能仅凭文件存在判断本次成功。后续请求还会覆盖标准文件，需要保留结果时应在下一次请求前归档，并协调下游读取。
 
 若地面端需要查看这些文件，可在确认成功、且没有后续任务覆盖时通过 SFTP/SCP 获取；这属于额外文件通道，不属于本 TCP 协议。
 
