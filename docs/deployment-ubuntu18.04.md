@@ -129,12 +129,12 @@ sudo journalctl -u ground-vehicle-tcp.service -f
 
 - 在 Ubuntu 18.04 amd64 容器中，以系统 Python 2.7.17 验证地图保存器的 PGM 字节、图像翻转、未知值 205 和 YAML 原点。
 - 在 Ubuntu 18.04、GCC 7.5、系统经典 TBB 环境中，验证自带 FindTBB 模块、C++17 编译及 parallel_for/task_scheduler_init 执行。
-- 在 Ubuntu 18.04/Melodic 容器中，使用实际 Python 3.8.20 和 `requirements-melodic.txt` 的锁定依赖，通过 36 项 TCP、坐标、地图、规划和轨迹输出测试；包含真正启动规划子进程、隔离错误 Python 路径并校验九个输出文件的测试。
+- 在 Ubuntu 18.04/Melodic 容器中，使用实际 Python 3.8.20 和 `requirements-melodic.txt` 的锁定依赖，通过 TCP、坐标、地图和轨迹输出测试；包含真正启动规划子进程、隔离错误 Python 路径并校验三份 XML 与叠加图的测试。
 - 全量测试发现 5 项历史失败：`test_gnss_timestamp_compensator`、`test_ligo_nmea_init_keyframes` 引用已移除的源码，`test_project_paths` 中一项引用不存在的 `banfu2.meta.yaml`。这些不作为本次适配通过的测试项。
 
 - 最终自动部署脚本已在目标容器中重新完整执行成功，包含 apt/rosdep 检查、Python 环境检查、catkin 编译和服务入口检查。
 - 整个 catkin 工作区在 Ubuntu 18.04 / Melodic / GCC 7.5 / CMake 3.10 下编译通过，服务启动入口检查通过。
-- 在隔离的 Melodic 工作区，通过合成 PCD 的真实 ROS 转换和两次 TCP 规划请求；均返回成功，九个文件通过数值/格式校验，第二次请求复用地图缓存。对应测试为 `tests/deployment/smoke_melodic_pipeline.py`，文件开头附专用测试工作区中的执行方式。该测试使用固定转换节点名和输出话题，只在隔离工作区运行。
+- 在隔离的 Melodic 工作区，通过合成 PCD 的真实 ROS 转换和两次 TCP 规划请求；均返回成功，三份 XML 和叠加图通过格式校验，第二次请求复用地图缓存。对应测试为 `tests/deployment/smoke_melodic_pipeline.py`，文件开头附专用测试工作区中的执行方式。该测试使用固定转换节点名和输出话题，只在隔离工作区运行。
 
 以上验证使用 amd64 容器；真实工控机上的原始点云、内存容量、网络和下游循迹仍需现场验收。其他 CPU 架构尚未完成同等验证。
 

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import csv
 import math
 import os
 import shutil
-import struct
 import tempfile
 import uuid
 import xml.etree.ElementTree as ET
@@ -17,6 +15,7 @@ import yaml
 
 from tools.path_creater.geo import GeoPoint, local_utm_to_geodetic
 from tools.path_creater.map_metadata import load_map_metadata
+from tools.path_creater.trajectory import remove_legacy_outputs
 from .pipeline import PipelineError, PipelineRunner
 
 from .map_cache import MapCache
@@ -114,31 +113,11 @@ class NavigationWorkflow:
 
     @staticmethod
     def _validate_outputs(output_dir: Path) -> None:
-        csv_fields = {
-            "traj_distance_geo.csv": ("latitude", "longitude"),
-            "traj_smooth_geo.csv": ("latitude", "longitude"),
-            "traj_cost_aware_geo.csv": ("latitude", "longitude"),
-            "traj_distance_enu.csv": ("x", "y"),
-            "traj_smooth_enu.csv": ("x", "y"),
-            "traj_cost_aware_enu.csv": ("x", "y"),
-        }
-        csv_names = tuple(csv_fields)
         xml_names = ("road_map1.xml", "road_map2.xml", "road_map3.xml")
-        for name in csv_names + xml_names:
+        for name in xml_names:
             path = output_dir / name
             if not path.is_file() or path.stat().st_size == 0:
                 raise PipelineError("OUTPUT_INVALID", "missing or empty trajectory artifact: {}".format(name))
-        for name, fields in csv_fields.items():
-            try:
-                with (output_dir / name).open("r", encoding="utf-8", newline="") as stream:
-                    rows = list(csv.reader(stream))
-                if not rows or tuple(rows[0]) != fields or len(rows) < 2:
-                    raise ValueError("missing expected header or trajectory points")
-                for row in rows[1:]:
-                    if len(row) != len(fields) or not all(math.isfinite(float(value)) for value in row):
-                        raise ValueError("invalid numeric row")
-            except (OSError, UnicodeError, ValueError, csv.Error) as exc:
-                raise PipelineError("OUTPUT_INVALID", "invalid trajectory CSV {}: {}".format(name, exc)) from exc
         for name in xml_names:
             try:
                 root = ET.parse(str(output_dir / name)).getroot()
@@ -151,17 +130,6 @@ class NavigationWorkflow:
                             raise ValueError("non-finite {} coordinate".format(field))
             except (OSError, ValueError, KeyError, ET.ParseError) as exc:
                 raise PipelineError("OUTPUT_INVALID", "invalid trajectory XML {}: {}".format(name, exc)) from exc
-        overlay_path = output_dir / "overlay.png"
-        try:
-            with overlay_path.open("rb") as stream:
-                header = stream.read(24)
-            if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
-                raise ValueError("invalid PNG header")
-            width, height = struct.unpack(">II", header[16:24])
-            if width == 0 or height == 0:
-                raise ValueError("zero-sized PNG")
-        except (OSError, ValueError, struct.error) as exc:
-            raise PipelineError("OUTPUT_INVALID", "invalid map overlay: {}".format(exc)) from exc
 
     def _configured_output_dir(self, config: Dict) -> Path:
         value = Path(str(config.get("output_dir", "../../../output")))
@@ -172,8 +140,6 @@ class NavigationWorkflow:
     @staticmethod
     def _publish_outputs(source_dir: Path, destination_dir: Path) -> None:
         names = (
-            "traj_distance_geo.csv", "traj_distance_enu.csv", "traj_smooth_geo.csv",
-            "traj_smooth_enu.csv", "traj_cost_aware_geo.csv", "traj_cost_aware_enu.csv",
             "road_map1.xml", "road_map2.xml", "road_map3.xml", "overlay.png",
         )
         destination_dir.mkdir(parents=True, exist_ok=True)
@@ -194,6 +160,7 @@ class NavigationWorkflow:
                 except OSError:
                     pass
                 raise
+        remove_legacy_outputs(destination_dir)
 
     @staticmethod
     def _map_error(exc: Exception) -> int:

@@ -1,4 +1,4 @@
-"""PCD -> real ROS -> TCP -> ten artifacts. Use a dedicated test workspace.
+"""PCD -> real ROS -> TCP -> XML trajectories and overlay. Use a dedicated test workspace.
 
 Run only after deployment, with ROS Python paths preserved separately:
   source devel/setup.bash
@@ -54,7 +54,7 @@ async def smoke(work, pcd):
             if previous_map_state is not None:
                 assert state == previous_map_state, 'map unexpectedly reconverted'
             previous_map_state = state
-        print('PASS: real ROS conversion, two TCP requests, ten valid artifacts, cache reuse')
+        print('PASS: real ROS conversion, two TCP requests, valid XML/overlay outputs, cache reuse')
     except Exception:
         for log in (work / 'state/jobs').glob('*/job.log'):
             print(log.read_text(errors='replace')[-12000:], file=sys.stderr)

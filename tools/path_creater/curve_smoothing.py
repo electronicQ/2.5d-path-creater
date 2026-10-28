@@ -1,4 +1,4 @@
-"""Safety-aware curve smoothing and fixed-interval sampling."""
+"""Safety-aware curve smoothing and shape-adaptive tracking-point sampling."""
 
 from __future__ import annotations
 
@@ -20,6 +20,15 @@ class CurveSmoothingConfig:
     min_corner_cut_m: float = 0.2
     safety_check_step_m: float = 0.25
     max_corner_attempts: int = 8
+
+
+@dataclass(frozen=True)
+class TrackingSamplingConfig:
+    enabled: bool = True
+    max_spacing_m: float = 10.0
+    min_spacing_m: float = 0.3
+    chord_tolerance_m: float = 0.15
+    max_heading_change_deg: float = 3.0
 
 
 def _clean(value: float) -> float:
@@ -161,6 +170,82 @@ def resample_by_interval(points: Sequence[Point], interval_m: float) -> List[Poi
     return sampled
 
 
+def _point_to_segment_distance(point: Point, start: Point, end: Point) -> float:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 1e-18:
+        return _distance(point, start)
+    projection = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / length_sq
+    projection = min(1.0, max(0.0, projection))
+    closest = (start[0] + projection * dx, start[1] + projection * dy)
+    return _distance(point, closest)
+
+
+def _heading(a: Point, b: Point) -> float:
+    return math.atan2(b[1] - a[1], b[0] - a[0])
+
+
+def _angle_difference(first: float, second: float) -> float:
+    return abs((second - first + math.pi) % (2.0 * math.pi) - math.pi)
+
+
+def adaptive_resample_path(points: Sequence[Point], cfg: TrackingSamplingConfig) -> List[Point]:
+    """Select sparse tracking points while bounding straight-line approximation error."""
+    min_spacing = float(cfg.min_spacing_m)
+    max_spacing = float(cfg.max_spacing_m)
+    chord_tolerance = float(cfg.chord_tolerance_m)
+    max_turn = math.radians(float(cfg.max_heading_change_deg))
+    if min_spacing <= 0.0:
+        raise ValueError("min_spacing_m must be positive.")
+    if max_spacing < min_spacing:
+        raise ValueError("max_spacing_m must be greater than or equal to min_spacing_m.")
+    if chord_tolerance <= 0.0:
+        raise ValueError("chord_tolerance_m must be positive.")
+    if not 0.0 < float(cfg.max_heading_change_deg) <= 180.0:
+        raise ValueError("max_heading_change_deg must be in (0, 180].")
+    if len(points) <= 1:
+        return [_clean_point(point) for point in points]
+    if not cfg.enabled:
+        return [_clean_point(point) for point in points]
+
+    fine = resample_by_interval(points, min_spacing)
+    if len(fine) <= 2:
+        return fine
+
+    cumulative = [0.0]
+    headings: List[float] = []
+    for first, second in zip(fine, fine[1:]):
+        segment_length = _distance(first, second)
+        cumulative.append(cumulative[-1] + segment_length)
+        headings.append(_heading(first, second))
+
+    selected = [fine[0]]
+    anchor = 0
+    while anchor < len(fine) - 1:
+        best = anchor + 1
+        accumulated_turn = 0.0
+        for candidate in range(anchor + 1, len(fine)):
+            if cumulative[candidate] - cumulative[anchor] > max_spacing + 1e-9:
+                break
+            if candidate > anchor + 1:
+                accumulated_turn += _angle_difference(headings[candidate - 2], headings[candidate - 1])
+                if accumulated_turn > max_turn + 1e-12:
+                    break
+            max_deviation = max(
+                _point_to_segment_distance(fine[index], fine[anchor], fine[candidate])
+                for index in range(anchor + 1, candidate)
+            ) if candidate > anchor + 1 else 0.0
+            if max_deviation > chord_tolerance + 1e-12:
+                break
+            best = candidate
+        _append_unique(selected, fine[best])
+        anchor = best
+
+    _append_unique(selected, fine[-1])
+    return selected
+
+
 def smooth_and_sample_path(
     points: Sequence[Point],
     is_segment_free: SegmentValidator,
@@ -175,3 +260,22 @@ def smooth_and_sample_path(
     if _segments_are_safe(sampled, is_segment_free):
         return sampled
     return resample_by_interval(base, float(cfg.sample_interval_m))
+
+
+def smooth_and_adaptive_sample_path(
+    points: Sequence[Point],
+    is_segment_free: SegmentValidator,
+    curve_cfg: CurveSmoothingConfig,
+    sampling_cfg: TrackingSamplingConfig,
+) -> List[Point]:
+    if len(points) <= 1:
+        return [_clean_point(point) for point in points]
+    if not sampling_cfg.enabled:
+        return smooth_and_sample_path(points, is_segment_free, curve_cfg)
+
+    base = [_clean_point(point) for point in points]
+    curve = round_corners(base, is_segment_free, curve_cfg)
+    sampled = adaptive_resample_path(curve, sampling_cfg)
+    if _segments_are_safe(sampled, is_segment_free):
+        return sampled
+    return adaptive_resample_path(base, sampling_cfg)

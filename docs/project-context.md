@@ -64,18 +64,16 @@
 - 平滑优先
 - 综合代价/安全距离优先
 
-每条轨迹都导出两种 CSV：
+每条轨迹导出一份形状自适应采样 XML，并额外生成一张离散轨迹点叠加图：
 
 ```text
-traj_distance_geo.csv
-traj_distance_enu.csv
-traj_smooth_geo.csv
-traj_smooth_enu.csv
-traj_cost_aware_geo.csv
-traj_cost_aware_enu.csv
+road_map1.xml
+road_map2.xml
+road_map3.xml
+overlay.png
 ```
 
-`*_geo.csv` 用于后续循迹，`*_enu.csv` 用于调试和检查。
+XML 用于后续循迹。直线轨迹点距最大约 10 m，缓弯约 1～2 m，急弯约 0.3～0.8 m。
 
 ## 后续升级计划
 

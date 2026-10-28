@@ -289,27 +289,27 @@ except (OSError, ValueError) as exc:
 
 ## 8. 第六步：确认和使用车端输出
 
-成功响应发出前，车端会检查九个 CSV/XML 文件非空、CSV 表头和数值有效、XML 可解析且顶点坐标有效，并验证 `overlay.png` 是有效的非空 PNG；随后逐文件原子替换到规划配置中的 `output_dir`（默认项目根目录 `output/`）。TCP 规划会强制启用叠加图，`output/overlay.png` 展示 PGM 地图、三种轨迹以及起终点。
+成功响应发出前，车端会检查三个 `road_map*.xml` 非空、可解析且顶点坐标有效；随后将三份 XML 和 `overlay.png` 逐文件原子替换到规划配置中的 `output_dir`（默认项目根目录 `output/`）。TCP 规划会强制启用叠加图，`output/overlay.png` 使用三份 XML 对应的自适应轨迹点在 PGM 上绘制三组互不相连的点轨迹以及起终点。
 
-| 策略 | 经纬度 CSV（表头 latitude,longitude） | ENU CSV（表头 x,y） | XML |
-| --- | --- | --- | --- |
-| 距离优先 | `traj_distance_geo.csv` | `traj_distance_enu.csv` | `road_map2.xml` |
-| 平滑优先 | `traj_smooth_geo.csv` | `traj_smooth_enu.csv` | `road_map3.xml` |
-| 综合代价/安全距离优先 | `traj_cost_aware_geo.csv` | `traj_cost_aware_enu.csv` | `road_map1.xml` |
+| 策略 | XML |
+| --- | --- |
+| 距离优先 | `road_map2.xml` |
+| 平滑优先 | `road_map3.xml` |
+| 综合代价/安全距离优先 | `road_map1.xml` |
 
-CSV 经纬度使用角度，ENU 使用米。XML 的 `x/y` 为局部 UTM 偏移、单位米，与请求的坐标定义一致；XML yaw 由轨迹方向生成。
+XML 的 `x/y` 为局部 UTM 偏移、单位米，与请求的坐标定义一致；XML yaw 由轨迹方向生成。轨迹点使用形状自适应采样：长直线最大约 10 m 一点，缓弯约 1～2 m，急弯约 0.3～0.8 m。
 
 在车端检查：
 
 ```bash
 cd /home/gzq/2.5d-path-creater
-ls -lh output/traj_*.csv output/road_map*.xml output/overlay.png
+ls -lh output/road_map*.xml output/overlay.png
 ls -lt var/ground_vehicle_tcp/jobs/
 ```
 
 每个任务保存在 `var/ground_vehicle_tcp/jobs/<内部任务目录>/`，含 `job.log`、本次规划配置和输出；该内部目录名不会通过 TCP 回传。地图准备早期失败时日志可能不完整，需结合服务终端或 systemd 日志排查。
 
-**必须等到本次成功响应后才读取标准输出文件**。原子替换只保证单个文件完整，十个文件不是一次事务；失败时标准目录可能仍是旧结果，或包含部分已替换文件，不能仅凭文件存在判断本次成功。后续请求还会覆盖标准文件，需要保留结果时应在下一次请求前归档，并协调下游读取。
+**必须等到本次成功响应后才读取标准输出文件**。原子替换只保证单个文件完整，四个输出文件不是一次事务；失败时标准目录可能仍是旧结果，或包含部分已替换文件，不能仅凭文件存在判断本次成功。后续请求还会覆盖标准文件，需要保留结果时应在下一次请求前归档，并协调下游读取。
 
 若地面端需要查看这些文件，可在确认成功、且没有后续任务覆盖时通过 SFTP/SCP 获取；这属于额外文件通道，不属于本 TCP 协议。
 

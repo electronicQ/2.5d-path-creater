@@ -18,6 +18,25 @@ from .map_loader import OccupancyMap
 GridPoint = Tuple[int, int]
 Pose = Tuple[float, float, float]
 
+LEGACY_OUTPUT_FILENAMES = (
+    "traj_distance_geo.csv",
+    "traj_distance_enu.csv",
+    "traj_smooth_geo.csv",
+    "traj_smooth_enu.csv",
+    "traj_cost_aware_geo.csv",
+    "traj_cost_aware_enu.csv",
+    "config.resolved.yaml",
+)
+
+
+def remove_legacy_outputs(directory: Path) -> None:
+    for filename in LEGACY_OUTPUT_FILENAMES:
+        path = directory / filename
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
 
 def path_to_poses(omap: OccupancyMap, path: Sequence[GridPoint]) -> List[Pose]:
     if len(path) == 0:
@@ -143,7 +162,7 @@ def write_overlay(
     start: GridPoint,
     goal: GridPoint,
 ) -> None:
-    """Render grayscale map with colored paths (image top = max world y)."""
+    """Render grayscale map with discrete colored tracking points."""
     # occ visualized: white=free, black=occupied
     gray = (255.0 * (1.0 - np.clip(omap.occ, 0.0, 1.0))).astype(np.uint8)
     # Mark inflated obstacles slightly darker gray for context
@@ -162,29 +181,31 @@ def write_overlay(
     h = omap.height
     image = Image.fromarray(vis, mode="RGB")
     draw = ImageDraw.Draw(image)
-    line_width = max(1, int(round(1.5 / max(float(omap.resolution), 1e-6))))
-    for name, path in paths.items():
+    point_radius = 2
+    for name, points in paths.items():
         color = colors.get(name, (255, 255, 0))
-        display_points = []
-        for r, c in path:
+        for r, c in points:
             ir = h - 1 - r
             if 0 <= ir < h and 0 <= c < omap.width:
-                display_points.append((int(c), int(ir)))
-        if len(display_points) >= 2:
-            draw.line(display_points, fill=color, width=line_width)
-        elif len(display_points) == 1:
-            draw.point(display_points[0], fill=color)
+                draw.ellipse(
+                    (
+                        int(c) - point_radius,
+                        int(ir) - point_radius,
+                        int(c) + point_radius,
+                        int(ir) + point_radius,
+                    ),
+                    fill=color,
+                )
 
     for r, c, color in (
         (start[0], start[1], (255, 255, 0)),
         (goal[0], goal[1], (255, 0, 255)),
     ):
         ir = h - 1 - r
-        for dr in range(-2, 3):
-            for dc in range(-2, 3):
-                rr, cc = ir + dr, c + dc
-                if 0 <= rr < h and 0 <= cc < omap.width:
-                    image.putpixel((cc, rr), color)
+        draw.ellipse(
+            (int(c) - 3, int(ir) - 3, int(c) + 3, int(ir) + 3),
+            fill=color,
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(out_path)

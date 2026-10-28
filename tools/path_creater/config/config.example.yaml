@@ -41,11 +41,23 @@ d_safe_m: 4.0
 # 是否对 A* 原始折线路径做快捷平滑，删除可直连的冗余折点。
 smooth_paths: true
 
+# 巡迹轨迹点自适应采样：直线稀疏，弯道根据几何误差加密。
+tracking_sampling:
+  enabled: true
+  # 长直线上的最大点距，单位米。
+  max_spacing_m: 10.0
+  # 急弯处的最小点距，单位米。
+  min_spacing_m: 0.3
+  # 两个轨迹点连线相对原平滑曲线的最大允许偏差，单位米。
+  chord_tolerance_m: 0.15
+  # 相邻输出线段允许的最大航向变化，单位度。
+  max_heading_change_deg: 3.0
+
 # 圆角曲线平滑与采样配置，用于把折线路径转换为更适合跟踪的连续轨迹点。
 curve_smoothing:
   # 是否启用圆角曲线平滑。
   enabled: true
-  # 平滑后轨迹点的采样间隔，单位米。
+  # 自适应采样关闭时使用的固定轨迹点间隔，单位米。
   sample_interval_m: 1.0
   # 转角处切角比例，越大圆角越明显。
   corner_cut_fraction: 0.35
@@ -80,6 +92,3 @@ output_dir: ../../../output
 
 # 是否输出 overlay.png，用于在地图上查看三条规划路径。
 write_overlay: true
-
-# 是否输出 config.resolved.yaml，记录实际使用的起终点 ENU 坐标等解析结果。
-write_resolved_config: true

@@ -213,6 +213,8 @@ output_dir: ../../../output
 
 再将配置中的 `start` 和 `goal` 改为实际起终点的 `latitude`、`longitude`、`altitude`：经纬度单位为度，高度单位为米，不能直接沿用仓库示例。**离线规划配置接收经纬高；TCP 客户端接收局部 UTM 米制偏移，两种输入不能直接混用。** 起终点应在地图内，并留出配置中障碍膨胀所需的通行空间。
 
+`tracking_sampling` 控制最终 XML 的轨迹点密度。默认直线最大约 `10 m` 一点、缓弯约 `1～2 m`、急弯约 `0.3～0.8 m`；可通过 `max_spacing_m`、`min_spacing_m`、`chord_tolerance_m` 和 `max_heading_change_deg` 联合调整。
+
 ### 6. 运行离线规划并查看输出
 
 在项目根目录执行（可复用终端 B）：
@@ -226,12 +228,11 @@ env -u PYTHONPATH -u PYTHONHOME .runtime/planner/bin/python \
 该命令只读取已保存的地图并规划，不会重新转换 PCD，也不需要先启动 TCP 服务。成功后检查：
 
 ```bash
-ls -lh output/traj_*_enu.csv output/traj_*_geo.csv
 ls -lh output/road_map1.xml output/road_map2.xml output/road_map3.xml
-ls -lh output/overlay.png output/config.resolved.yaml
+ls -lh output/overlay.png
 ```
 
-默认输出三种策略共六个 CSV、三个 XML，以及启用时的路径叠加图和解析配置。`*_enu.csv` 是局部 ENU 米制坐标，`*_geo.csv` 是经纬度；`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标。可打开 `output/overlay.png` 检查路径是否落在预期道路上。
+默认只输出三个 XML 和一张路径叠加图。`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标和形状自适应轨迹点。`overlay.png` 在 PGM 上绘制三组互不相连的轨迹点以及起终点。
 
 只调整起终点或规划权重时，修改配置并重复第 6 步即可；更换点云或滤波参数时，需要重新执行第 2～4 步保存地图。手动生成的地图不会自动登记进 TCP 服务的地图缓存；恢复正常服务时先停止手动 ROS launch，再运行 `bash scripts/run_vehicle.sh`，服务按自身缓存流程处理请求。
 
@@ -260,7 +261,7 @@ TCP 客户端 ──32 字节规划请求─────> TCP 服务端 :8079
 2. 车端校验帧长度、字段和 CRC8。
 3. 首次请求或地图指纹变化时，车端依次执行无 RViz 的 ROS 点云转换和 PGM 保存。
 4. 车端将局部 UTM 坐标反投影为 WGS84，再由规划器转换到地图局部 ENU 坐标进行规划；请求中的起点和目标点 yaw 当前只接收、不参与规划。
-5. 三组 CSV 和三个 `road_map*.xml` 都校验通过后，车端逐文件原子替换到 `output/`，再发送 8 字节成功响应。
+5. 三个 `road_map*.xml` 都校验通过后，车端将三份 XML 和 `overlay.png` 逐文件原子替换到 `output/`，再发送 8 字节成功响应。
 
 地图缓存指纹包含 PCD SHA-256、ENU 原点和转换配置。服务重启时指纹匹配即可复用 PGM；PCD、原点或转换配置变化时自动重新转换。一次只允许执行一个转换/规划任务。
 
@@ -280,12 +281,6 @@ tools/ground_vehicle_tcp/
 规划输出：
 
 ```text
-output/traj_distance_geo.csv
-output/traj_distance_enu.csv
-output/traj_smooth_geo.csv
-output/traj_smooth_enu.csv
-output/traj_cost_aware_geo.csv
-output/traj_cost_aware_enu.csv
 output/road_map1.xml
 output/road_map2.xml
 output/road_map3.xml

@@ -12,14 +12,18 @@ import yaml
 
 from .auto_endpoints import resolve_endpoints
 from .clearance import build_clearance_from_free
-from .curve_smoothing import CurveSmoothingConfig, smooth_and_sample_path
+from .curve_smoothing import (
+    CurveSmoothingConfig,
+    TrackingSamplingConfig,
+    smooth_and_adaptive_sample_path,
+)
 from .geo import GeoPoint, enu_to_geodetic, geodetic_to_enu, geodetic_to_local_utm
 from .map_loader import load_map
 from .map_metadata import load_map_metadata
 from .map_semantics import MapSemantics, build_semantic_layers
 from .path_smoothing import shortcut_path
 from .planner import plan_mode
-from .trajectory import write_enu_csv, write_geo_csv, write_overlay, write_road_map_xml
+from .trajectory import remove_legacy_outputs, write_overlay, write_road_map_xml
 from .timing import format_duration
 
 
@@ -85,6 +89,21 @@ def _load_curve_smoothing_config(cfg: Dict[str, Any]) -> CurveSmoothingConfig:
         min_corner_cut_m=float(value.get("min_corner_cut_m", 0.2)),
         safety_check_step_m=float(value.get("safety_check_step_m", 0.25)),
         max_corner_attempts=int(value.get("max_corner_attempts", 8)),
+    )
+
+
+def _load_tracking_sampling_config(cfg: Dict[str, Any]) -> TrackingSamplingConfig:
+    value = cfg.get("tracking_sampling", {})
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError("tracking_sampling must be a mapping.")
+    return TrackingSamplingConfig(
+        enabled=bool(value.get("enabled", True)),
+        max_spacing_m=float(value.get("max_spacing_m", 10.0)),
+        min_spacing_m=float(value.get("min_spacing_m", 0.3)),
+        chord_tolerance_m=float(value.get("chord_tolerance_m", 0.15)),
+        max_heading_change_deg=float(value.get("max_heading_change_deg", 3.0)),
     )
 
 
@@ -187,17 +206,6 @@ def main(argv: Optional[list] = None) -> int:
         out_dir = (root / out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if cfg.get("write_resolved_config", True):
-        resolved = dict(cfg)
-        resolved["start_enu"] = [float(start_xy[0]), float(start_xy[1])]
-        resolved["goal_enu"] = [float(goal_xy[0]), float(goal_xy[1])]
-        resolved["unknown_gray"] = int(semantics.unknown_gray)
-        resolved["absolute_obstacle_gray"] = int(semantics.absolute_obstacle_gray)
-        resolved_path = out_dir / "config.resolved.yaml"
-        with open(resolved_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(resolved, f, sort_keys=False, allow_unicode=True)
-        print("Wrote {}".format(resolved_path))
-
     planners_cfg = cfg.get("planners") or {
         "distance": {"w_turn": 0.0, "w_clear": 1.0, "w_gray": 0.5},
         "smooth": {"w_turn": 4.0, "w_clear": 2.0, "w_gray": 1.0},
@@ -207,6 +215,7 @@ def main(argv: Optional[list] = None) -> int:
     paths = {}
     smooth_paths = bool(cfg.get("smooth_paths", True))
     curve_cfg = _load_curve_smoothing_config(cfg)
+    sampling_cfg = _load_tracking_sampling_config(cfg)
     is_world_segment_free = lambda a, b: _world_segment_is_free(
         omap,
         clearance.free,
@@ -231,13 +240,14 @@ def main(argv: Optional[list] = None) -> int:
         shortcut_len = len(path)
         control_points = [omap.grid_to_world(r, c) for r, c in path]
 
-        curve_elapsed = 0.0
-        if curve_cfg.enabled:
-            curve_start = time.perf_counter()
-            enu_points = smooth_and_sample_path(control_points, is_world_segment_free, curve_cfg)
-            curve_elapsed = time.perf_counter() - curve_start
-        else:
-            enu_points = control_points
+        curve_start = time.perf_counter()
+        enu_points = smooth_and_adaptive_sample_path(
+            control_points,
+            is_world_segment_free,
+            curve_cfg,
+            sampling_cfg,
+        )
+        curve_elapsed = time.perf_counter() - curve_start
 
         write_start = time.perf_counter()
         paths[mode] = [omap.world_to_grid(x, y) for x, y in enu_points]
@@ -246,29 +256,20 @@ def main(argv: Optional[list] = None) -> int:
             geodetic_to_local_utm(point, map_meta.enu_origin)[:2]
             for point in geo_points
         ]
-        enu_path = out_dir / "traj_{}_enu.csv".format(mode)
-        geo_path = out_dir / "traj_{}_geo.csv".format(mode)
         try:
             road_map_name = ROAD_MAP_FILENAMES[mode]
         except KeyError as exc:
             raise ValueError("unsupported planner mode for road map output: {}".format(mode)) from exc
         road_map_path = out_dir / road_map_name
-        write_enu_csv(enu_path, enu_points)
-        write_geo_csv(geo_path, geo_points)
         write_road_map_xml(road_map_path, local_utm_points)
         write_elapsed = time.perf_counter() - write_start
         mode_elapsed = time.perf_counter() - mode_start
 
-        if curve_cfg.enabled:
-            print(
-                "  {} raw waypoints -> {} shortcut waypoints -> {} sampled curve points → {}, {}, {}".format(
-                    raw_len, shortcut_len, len(enu_points), geo_path, enu_path, road_map_path
-                )
+        print(
+            "  {} raw waypoints -> {} shortcut waypoints -> {} adaptive tracking points -> {}".format(
+                raw_len, shortcut_len, len(enu_points), road_map_path
             )
-        elif smooth_paths:
-            print("  {} raw waypoints -> {} shortcut waypoints → {}, {}, {}".format(raw_len, shortcut_len, geo_path, enu_path, road_map_path))
-        else:
-            print("  {} waypoints → {}, {}, {}".format(len(enu_points), geo_path, enu_path, road_map_path))
+        )
         print(
             "  timing: astar={}, shortcut={}, curve={}, write={}, total={}".format(
                 format_duration(plan_elapsed),
@@ -284,6 +285,7 @@ def main(argv: Optional[list] = None) -> int:
         write_overlay(omap, clearance.free, paths, overlay_path, start_rc, goal_rc)
         print("Wrote {}".format(overlay_path))
 
+    remove_legacy_outputs(out_dir)
     print("Done. Total elapsed: {}".format(format_duration(time.perf_counter() - total_start)))
     return 0
 

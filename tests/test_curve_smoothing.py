@@ -1,7 +1,12 @@
 import math
 import unittest
 
-from tools.path_creater.curve_smoothing import CurveSmoothingConfig, smooth_and_sample_path
+from tools.path_creater.curve_smoothing import (
+    CurveSmoothingConfig,
+    TrackingSamplingConfig,
+    adaptive_resample_path,
+    smooth_and_sample_path,
+)
 
 
 class CurveSmoothingTest(unittest.TestCase):
@@ -31,6 +36,42 @@ class CurveSmoothingTest(unittest.TestCase):
         points = smooth_and_sample_path([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0)], only_axis_aligned, cfg)
 
         self.assertIn((2.0, 0.0), points)
+
+
+class AdaptiveTrackingSamplingTest(unittest.TestCase):
+    @staticmethod
+    def segment_lengths(points):
+        return [math.dist(a, b) for a, b in zip(points, points[1:])]
+
+    def test_long_straight_segments_use_sparse_points(self):
+        points = adaptive_resample_path([(0.0, 0.0), (100.0, 0.0)], TrackingSamplingConfig())
+
+        lengths = self.segment_lengths(points)
+        self.assertGreater(len(lengths), 1)
+        self.assertLessEqual(max(lengths), 10.0 + 1e-9)
+        self.assertGreater(sum(1 for length in lengths if length > 9.0), len(lengths) / 2)
+
+    def test_gentle_curve_uses_one_to_two_meter_spacing(self):
+        points = [
+            (20.0 * math.sin(math.radians(angle)), 20.0 * (1.0 - math.cos(math.radians(angle))))
+            for angle in range(0, 91, 5)
+        ]
+
+        sampled = adaptive_resample_path(points, TrackingSamplingConfig())
+        lengths = self.segment_lengths(sampled)
+        self.assertGreaterEqual(min(lengths), 1.0)
+        self.assertLessEqual(max(lengths), 2.0)
+
+    def test_sharp_curve_uses_short_segments(self):
+        points = [
+            (2.0 * math.sin(math.radians(angle)), 2.0 * (1.0 - math.cos(math.radians(angle))))
+            for angle in range(0, 181, 5)
+        ]
+
+        sampled = adaptive_resample_path(points, TrackingSamplingConfig())
+        lengths = self.segment_lengths(sampled)
+        self.assertGreaterEqual(min(lengths), 0.25)
+        self.assertLessEqual(max(lengths), 0.8)
 
 
 if __name__ == "__main__":

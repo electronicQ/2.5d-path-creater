@@ -124,12 +124,6 @@ class NavigationWorkflowErrorTest(unittest.TestCase):
                 with Path(config_path).open("r", encoding="utf-8") as stream:
                     type(self).configs.append(yaml.safe_load(stream))
                 output_dir.mkdir(parents=True, exist_ok=True)
-                for name in (
-                    "traj_distance_geo.csv", "traj_distance_enu.csv", "traj_smooth_geo.csv",
-                    "traj_smooth_enu.csv", "traj_cost_aware_geo.csv", "traj_cost_aware_enu.csv",
-                ):
-                    header = "latitude,longitude" if name.endswith("_geo.csv") else "x,y"
-                    (output_dir / name).write_text(header + "\n0,0\n", encoding="utf-8")
                 for name in ("road_map1.xml", "road_map2.xml", "road_map3.xml"):
                     (output_dir / name).write_text(
                         '<map><vertex x="0" y="0" yaw="0" /></map>\n', encoding="utf-8"
@@ -158,23 +152,17 @@ class NavigationWorkflowErrorTest(unittest.TestCase):
             self.assertEqual(FakeRunner.configs[0]["goal"], FakeRunner.configs[1]["goal"])
             self.assertEqual(FakeRunner.configs[0]["output_dir"].split("/")[-1], "output")
             self.assertTrue((root / "output" / "road_map1.xml").is_file())
-            self.assertTrue((root / "output" / "traj_smooth_enu.csv").is_file())
             self.assertTrue((root / "output" / "overlay.png").is_file())
 
 
 class NavigationOutputValidationTest(unittest.TestCase):
     @staticmethod
-    def write_outputs(output_dir, include_overlay=True):
+    def write_outputs(output_dir, include_overlay=True, include_road_map3=True):
         output_dir.mkdir(parents=True, exist_ok=True)
-        for name in (
-            "traj_distance_geo.csv", "traj_smooth_geo.csv", "traj_cost_aware_geo.csv",
-        ):
-            (output_dir / name).write_text("latitude,longitude\n0,0\n", encoding="utf-8")
-        for name in (
-            "traj_distance_enu.csv", "traj_smooth_enu.csv", "traj_cost_aware_enu.csv",
-        ):
-            (output_dir / name).write_text("x,y\n0,0\n", encoding="utf-8")
-        for name in ("road_map1.xml", "road_map2.xml", "road_map3.xml"):
+        road_maps = ["road_map1.xml", "road_map2.xml"]
+        if include_road_map3:
+            road_maps.append("road_map3.xml")
+        for name in road_maps:
             (output_dir / name).write_text(
                 '<map><vertex x="0" y="0" yaw="0" /></map>\n', encoding="utf-8"
             )
@@ -187,19 +175,24 @@ class NavigationOutputValidationTest(unittest.TestCase):
             source = root / "source"
             destination = root / "output"
             self.write_outputs(source)
+            destination.mkdir()
+            (destination / "traj_distance_geo.csv").write_text("old\n", encoding="utf-8")
+            (destination / "config.resolved.yaml").write_text("old: true\n", encoding="utf-8")
 
             NavigationWorkflow._validate_outputs(source)
             NavigationWorkflow._publish_outputs(source, destination)
 
             self.assertTrue((destination / "overlay.png").is_file())
             self.assertEqual((destination / "overlay.png").read_bytes(), (source / "overlay.png").read_bytes())
+            self.assertFalse((destination / "traj_distance_geo.csv").exists())
+            self.assertFalse((destination / "config.resolved.yaml").exists())
 
-    def test_rejects_missing_map_overlay(self):
+    def test_rejects_missing_trajectory_xml(self):
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "output"
-            self.write_outputs(output, include_overlay=False)
+            self.write_outputs(output, include_road_map3=False)
 
-            with self.assertRaisesRegex(PipelineError, "invalid map overlay"):
+            with self.assertRaisesRegex(PipelineError, "road_map3.xml"):
                 NavigationWorkflow._validate_outputs(output)
 
 

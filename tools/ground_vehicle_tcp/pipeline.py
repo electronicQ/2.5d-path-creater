@@ -127,8 +127,6 @@ class PipelineRunner:
         if result.returncode != 0:
             raise PipelineError("PLANNER_FAILED", "planner exited with {}".format(result.returncode))
         names = (
-            "traj_distance_geo.csv", "traj_distance_enu.csv", "traj_smooth_geo.csv",
-            "traj_smooth_enu.csv", "traj_cost_aware_geo.csv", "traj_cost_aware_enu.csv",
             "road_map1.xml", "road_map2.xml", "road_map3.xml", "overlay.png",
         )
         artifacts = {name: str(output_dir / name) for name in names if (output_dir / name).is_file()}

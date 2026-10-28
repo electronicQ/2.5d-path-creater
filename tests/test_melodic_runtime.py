@@ -34,7 +34,7 @@ class MelodicRuntimeTest(unittest.TestCase):
             self.assertEqual(run.call_args[0][0][0], sys.executable)
             self.assertNotIn('PYTHONPATH', run.call_args[1]['env'])
 
-    def test_real_planner_subprocess_generates_all_ten_outputs(self):
+    def test_real_planner_subprocess_generates_xml_and_overlay(self):
         from tools.ground_vehicle_tcp.workflow import NavigationWorkflow
         from tools.path_creater.geo import GeoPoint, enu_to_geodetic
         root = Path(__file__).resolve().parents[1]
@@ -63,7 +63,7 @@ class MelodicRuntimeTest(unittest.TestCase):
             runner = PipelineRunner(root, timeout_s=30, env={
                 'ROS_DISTRO': 'melodic', 'VEHICLE_ROS_PYTHONPATH': str(poison)})
             outputs = runner.plan(work / 'config.yaml', work / 'output', work / 'job.log')
-            self.assertEqual(len(outputs), 10)
+            self.assertEqual(len(outputs), 4)
             NavigationWorkflow._validate_outputs(work / 'output')
 
     def test_noetic_default_and_explicit_saver_interpreter(self):

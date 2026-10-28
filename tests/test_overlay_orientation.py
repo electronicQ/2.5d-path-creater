@@ -46,11 +46,41 @@ class OverlayOrientationTest(unittest.TestCase):
             )
             free = np.ones((5, 5), dtype=bool)
 
-            write_overlay(omap, free, {"distance": [(0, 0)]}, out, (4, 4), (4, 3))
+            write_overlay(omap, free, {"distance": [(0, 0)]}, out, (4, 0), (0, 4))
 
             img = Image.open(out).convert("RGB")
-            self.assertEqual(img.getpixel((0, 0)), (255, 255, 255))
+            self.assertEqual(img.getpixel((0, 0)), (255, 255, 0))
             self.assertEqual(img.getpixel((0, 4)), (220, 40, 40))
+
+    def test_tracking_points_are_not_connected_by_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "points.png"
+            gray = np.full((10, 10), 200, dtype=np.uint8)
+            omap = OccupancyMap(
+                resolution=1.0,
+                origin_x=0.0,
+                origin_y=0.0,
+                origin_yaw=0.0,
+                negate=0,
+                occupied_thresh=0.65,
+                free_thresh=0.25,
+                occ=(255.0 - gray) / 255.0,
+                gray=gray,
+                image_path=Path("dummy.pgm"),
+                yaml_path=Path("dummy.yaml"),
+            )
+
+            write_overlay(
+                omap,
+                np.ones((10, 10), dtype=bool),
+                {"distance": [(0, 0), (0, 9)]},
+                out,
+                (9, 0),
+                (9, 1),
+            )
+
+            image = Image.open(out).convert("RGB")
+            self.assertNotEqual(image.getpixel((0, 4)), (220, 40, 40))
 
 
 if __name__ == "__main__":

@@ -15,26 +15,16 @@
 输出：
 
 ```text
-output/traj_distance_geo.csv
-output/traj_distance_enu.csv
-output/traj_smooth_geo.csv
-output/traj_smooth_enu.csv
-output/traj_cost_aware_geo.csv
-output/traj_cost_aware_enu.csv
 output/road_map1.xml
 output/road_map2.xml
 output/road_map3.xml
 output/overlay.png
-output/config.resolved.yaml
 ```
 
-CSV 格式：
-
-- `traj_distance_geo.csv`、`traj_smooth_geo.csv`、`traj_cost_aware_geo.csv`：WGS84 经纬度坐标，列为 `latitude,longitude`，不是栅格坐标，也不是 UTM 坐标。
-- `traj_distance_enu.csv`、`traj_smooth_enu.csv`、`traj_cost_aware_enu.csv`：以 `map_enu.meta.yaml` 中 `enu_origin` 为原点的局部 ENU 坐标，列为 `x,y`，单位为米；其中 `x` 为 East，`y` 为 North。
 - `road_map1.xml`：代价感知（`cost_aware`）轨迹的局部 UTM XML。
 - `road_map2.xml`：距离优先（`distance`）轨迹的局部 UTM XML。
 - `road_map3.xml`：平滑优先（`smooth`）轨迹的局部 UTM XML。
+- `overlay.png`：在 PGM 地图上绘制三组互不相连的轨迹点，以及起点和终点。
 
 局部 UTM 坐标的定义为：
 
@@ -45,7 +35,7 @@ local_y = UTM_northing(point) - UTM_northing(ENU_origin)
 
 UTM 分区和南北半球根据 ENU 原点选择，XML 中的 `x`、`y` 单位为米，`yaw` 单位为弧度。XML 是“以 ENU 原点为原点的局部 UTM 偏移坐标”，与 ENU 使用相同的原点，但不是严格意义上的 ENU 坐标。文件名映射固定为：`road_map1.xml = road_map_cost_aware.xml`、`road_map2.xml = road_map_distance.xml`、`road_map3.xml = road_map_smooth.xml`。XML 只包含 `<map>` 根节点和 `<vertex>` 轨迹点。
 
-默认会对 A* 输出先做直线可视化 shortcut，再做安全圆角曲线平滑，并按固定间隔采样；CSV 中保存的是最终采样点。
+默认会对 A* 输出先做直线可视化 shortcut，再做安全圆角曲线平滑，然后按弦误差、航向变化和最大间距自适应采样。长直线上的点距最大约 10 m，缓弯约 1～2 m，急弯约 0.3～0.8 m；XML 保存最终轨迹点。
 
 ## 地图灰度语义
 
@@ -108,6 +98,12 @@ gray_cost:
 inflation_radius_m: 0.6
 d_safe_m: 1.0
 smooth_paths: true
+tracking_sampling:
+  enabled: true
+  max_spacing_m: 10.0
+  min_spacing_m: 0.3
+  chord_tolerance_m: 0.15
+  max_heading_change_deg: 3.0
 curve_smoothing:
   enabled: true
   sample_interval_m: 1.0
@@ -132,7 +128,6 @@ planners:
 
 output_dir: output
 write_overlay: true
-write_resolved_config: true
 ```
 
 `map_meta` 文件只保存该静态地图对应的局部 ENU 原点：
@@ -182,7 +177,9 @@ step_length
 
 `smooth_paths: true` 会在规划完成后做 line-of-sight shortcut smoothing：如果两个非相邻路径点之间的直线段全程处在膨胀后的自由栅格内，就移除中间冗余点。这个步骤不会穿越未知区、障碍区或障碍膨胀区，用来减少栅格搜索带来的锯齿折线。
 
-`curve_smoothing.enabled: true` 会继续对 shortcut 后的路径做安全圆角化：每个折角会尝试用二次 Bezier 曲线替代，曲线采样点和相邻采样点连线都必须处在膨胀后的自由栅格内。最终 `*_enu.csv` 和 `*_geo.csv` 按 `sample_interval_m` 等弧长间隔保存点，默认间隔为 `1.0 m`。
+`curve_smoothing.enabled: true` 会继续对 shortcut 后的路径做安全圆角化：每个折角会尝试用二次 Bezier 曲线替代，曲线采样点和相邻采样点连线都必须处在膨胀后的自由栅格内。
+
+`tracking_sampling` 决定最终 XML 轨迹点密度。采样时向前寻找尽可能远的新点，同时限制最大点距、曲线弦误差和累计航向变化。该方式不直接依赖栅格曲率，因此能稳定表现为直线稀疏、缓弯适中、急弯密集。`min_spacing_m` 是最小点距，`max_spacing_m` 是直线最大点距。
 
 ## 常见失败原因
 
@@ -205,8 +202,8 @@ step_length
 | `clearance.py` | 根据 forbidden/free 计算障碍膨胀和距离场。 |
 | `planner.py` | 8 邻接 A* 和不同权重策略。 |
 | `path_smoothing.py` | 对规划结果做可视线捷径平滑，减少不必要折点。 |
-| `curve_smoothing.py` | 对 shortcut 路径做安全圆角曲线平滑，并按固定间隔采样。 |
+| `curve_smoothing.py` | 对 shortcut 路径做安全圆角平滑，并按几何误差自适应采样巡迹点。 |
 | `geo.py` | WGS84、ECEF、ENU 坐标转换。 |
 | `map_metadata.py` | 读取地图 ENU 原点元数据。 |
 | `auto_endpoints.py` | 解析起终点并检查可通行性。 |
-| `trajectory.py` | 写出 ENU/经纬度 CSV 和路径叠加图。 |
+| `trajectory.py` | 写出三份轨迹 XML 和离散轨迹点叠加图。 |
