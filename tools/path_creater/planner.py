@@ -31,6 +31,7 @@ class PlannerWeights:
     w_turn: float
     w_clear: float
     w_gray: float
+    w_center: float = 0.0
 
 
 def _dir_id(dr: int, dc: int) -> int:
@@ -69,6 +70,8 @@ def astar(
     goal: GridPoint,
     weights: PlannerWeights,
     d_safe_m: float,
+    corridor_distance_m: Optional[np.ndarray] = None,
+    corridor_target_m: float = 0.0,
 ) -> List[GridPoint]:
     h, w = free.shape
     sr, sc = start
@@ -118,7 +121,17 @@ def astar(
             tp = turn_penalty(prev_dir, ndir)
             cp = clearance_penalty(float(dist_m[nr, nc]), d_safe_m)
             gray_cell_cost = float(gray_cost[nr, nc])
-            cost = step_len + weights.w_turn * tp + weights.w_clear * cp + weights.w_gray * gray_cell_cost
+            center_penalty = 0.0
+            if corridor_distance_m is not None and weights.w_center > 0.0:
+                center_deficit = max(0.0, corridor_target_m - float(corridor_distance_m[nr, nc]))
+                center_penalty = center_deficit * center_deficit
+            cost = (
+                step_len
+                + weights.w_turn * tp
+                + weights.w_clear * cp
+                + weights.w_gray * gray_cell_cost
+                + weights.w_center * center_penalty
+            )
             ng = g0 + cost
             if ng < g_score[nr, nc]:
                 g_score[nr, nc] = ng
@@ -153,10 +166,23 @@ def plan_mode(
     goal: GridPoint,
     mode_weights: Dict[str, float],
     d_safe_m: float,
+    corridor_distance_m: Optional[np.ndarray] = None,
+    corridor_target_m: float = 0.0,
 ) -> List[GridPoint]:
     weights = PlannerWeights(
         w_turn=float(mode_weights.get("w_turn", 0.0)),
         w_clear=float(mode_weights.get("w_clear", 0.0)),
         w_gray=float(mode_weights.get("w_gray", 0.0)),
+        w_center=float(mode_weights.get("w_center", 0.0)),
     )
-    return astar(clearance.free, clearance.dist_m, gray_cost, start, goal, weights, d_safe_m)
+    return astar(
+        clearance.free,
+        clearance.dist_m,
+        gray_cost,
+        start,
+        goal,
+        weights,
+        d_safe_m,
+        corridor_distance_m=corridor_distance_m,
+        corridor_target_m=corridor_target_m,
+    )

@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 import yaml
 
 from .auto_endpoints import resolve_endpoints
-from .clearance import build_clearance_from_free
+from .clearance import build_clearance_from_free, build_corridor_distance
 from .curve_smoothing import (
     CurveSmoothingConfig,
     TrackingSamplingConfig,
@@ -108,6 +108,30 @@ def _load_tracking_sampling_config(cfg: Dict[str, Any]) -> TrackingSamplingConfi
     )
 
 
+def _load_corridor_centering_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    value = cfg.get("corridor_centering", {})
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError("corridor_centering must be a mapping.")
+    config = {
+        "enabled": bool(value.get("enabled", False)),
+        "apply_to": str(value.get("apply_to", "cost_aware")),
+        "high_cost_gray_threshold": int(value.get("high_cost_gray_threshold", 220)),
+        "target_clearance_m": float(value.get("target_clearance_m", 3.0)),
+        "weight": float(value.get("weight", 20.0)),
+        "shortcut_min_clearance_m": float(value.get("shortcut_min_clearance_m", 2.5)),
+        "curve_min_clearance_m": float(value.get("curve_min_clearance_m", 2.0)),
+    }
+    if not 0 <= config["high_cost_gray_threshold"] <= 255:
+        raise ValueError("high_cost_gray_threshold must be in [0, 255].")
+    if config["target_clearance_m"] <= 0.0 or config["weight"] <= 0.0:
+        raise ValueError("corridor target and weight must be positive.")
+    if config["shortcut_min_clearance_m"] < 0.0 or config["curve_min_clearance_m"] < 0.0:
+        raise ValueError("corridor minimum clearances must be non-negative.")
+    return config
+
+
 def _world_segment_is_free(omap, free, safety_step_m: float, a, b) -> bool:
     ax, ay = a
     bx, by = b
@@ -119,6 +143,28 @@ def _world_segment_is_free(omap, free, safety_step_m: float, a, b) -> bool:
         y = ay + (by - ay) * t
         r, c = omap.world_to_grid(x, y)
         if not omap.in_bounds(r, c) or not free[r, c]:
+            return False
+    return True
+
+
+def _world_segment_meets_minimum(
+    omap,
+    values: np.ndarray,
+    minimum: float,
+    safety_step_m: float,
+    a,
+    b,
+) -> bool:
+    ax, ay = a
+    bx, by = b
+    length = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+    steps = max(1, int(length / max(float(safety_step_m), 1e-6)) + 1)
+    for i in range(steps + 1):
+        t = i / float(steps)
+        x = ax + (bx - ax) * t
+        y = ay + (by - ay) * t
+        r, c = omap.world_to_grid(x, y)
+        if not omap.in_bounds(r, c) or float(values[r, c]) < float(minimum):
             return False
     return True
 
@@ -179,6 +225,22 @@ def main(argv: Optional[list] = None) -> int:
     )
     free_count = int(clearance.free.sum())
     print("Free cells after inflation: {}".format(free_count))
+    corridor_cfg = _load_corridor_centering_config(cfg)
+    corridor_distance = None
+    if corridor_cfg["enabled"]:
+        corridor_distance = build_corridor_distance(
+            omap.gray,
+            omap.resolution,
+            corridor_cfg["high_cost_gray_threshold"],
+            hard_boundary=semantic_layers.forbidden,
+        )
+        print(
+            "Corridor centering: mode={}, edge_gray<={}, target={:.2f} m".format(
+                corridor_cfg["apply_to"],
+                corridor_cfg["high_cost_gray_threshold"],
+                corridor_cfg["target_clearance_m"],
+            )
+        )
 
     start_geo = _load_geo_point(cfg, "start")
     goal_geo = _load_geo_point(cfg, "goal")
@@ -217,7 +279,7 @@ def main(argv: Optional[list] = None) -> int:
     smooth_paths = bool(cfg.get("smooth_paths", True))
     curve_cfg = _load_curve_smoothing_config(cfg)
     sampling_cfg = _load_tracking_sampling_config(cfg)
-    is_world_segment_free = lambda a, b: _world_segment_is_free(
+    base_world_segment_is_free = lambda a, b: _world_segment_is_free(
         omap,
         clearance.free,
         curve_cfg.safety_check_step_m,
@@ -229,22 +291,54 @@ def main(argv: Optional[list] = None) -> int:
         mode_start = time.perf_counter()
 
         plan_start = time.perf_counter()
-        path = plan_mode(clearance, semantic_layers.gray_cost, start_rc, goal_rc, weights, d_safe_m=d_safe)
+        use_corridor = corridor_distance is not None and mode == corridor_cfg["apply_to"]
+        mode_weights = dict(weights)
+        if use_corridor:
+            mode_weights["w_center"] = corridor_cfg["weight"]
+        path = plan_mode(
+            clearance,
+            semantic_layers.gray_cost,
+            start_rc,
+            goal_rc,
+            mode_weights,
+            d_safe_m=d_safe,
+            corridor_distance_m=corridor_distance if use_corridor else None,
+            corridor_target_m=corridor_cfg["target_clearance_m"] if use_corridor else 0.0,
+        )
         plan_elapsed = time.perf_counter() - plan_start
         raw_len = len(path)
 
         shortcut_elapsed = 0.0
         if smooth_paths:
             shortcut_start = time.perf_counter()
-            path = shortcut_path(clearance.free, path)
+            path = shortcut_path(
+                clearance.free,
+                path,
+                clearance_values=corridor_distance if use_corridor else None,
+                minimum_clearance=corridor_cfg["shortcut_min_clearance_m"] if use_corridor else 0.0,
+            )
             shortcut_elapsed = time.perf_counter() - shortcut_start
         shortcut_len = len(path)
         control_points = [omap.grid_to_world(r, c) for r, c in path]
 
         curve_start = time.perf_counter()
+        if use_corridor:
+            is_world_segment_valid = lambda a, b: (
+                base_world_segment_is_free(a, b)
+                and _world_segment_meets_minimum(
+                    omap,
+                    corridor_distance,
+                    corridor_cfg["curve_min_clearance_m"],
+                    curve_cfg.safety_check_step_m,
+                    a,
+                    b,
+                )
+            )
+        else:
+            is_world_segment_valid = base_world_segment_is_free
         enu_points = smooth_and_adaptive_sample_path(
             control_points,
-            is_world_segment_free,
+            is_world_segment_valid,
             curve_cfg,
             sampling_cfg,
         )

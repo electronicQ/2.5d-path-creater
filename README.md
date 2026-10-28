@@ -215,6 +215,8 @@ output_dir: ../../../output
 
 `tracking_sampling` 控制最终 XML 的轨迹点密度。默认直线最大约 `10 m` 一点、缓弯约 `1～2 m`、急弯约 `0.3～0.8 m`；可通过 `max_spacing_m`、`min_spacing_m`、`chord_tolerance_m` 和 `max_heading_change_deg` 联合调整。
 
+`corridor_centering` 只修改 `cost_aware` 对应的 `road_map1.xml`：轨迹会增加道路中心保持代价，并在 shortcut 和曲线圆角阶段继续限制与高代价边界的距离，避免弯道切入内侧灰色区域。`road_map2.xml` 和 `road_map3.xml` 保持原逻辑。
+
 ### 6. 运行离线规划并查看输出
 
 在项目根目录执行（可复用终端 B）：
@@ -232,7 +234,7 @@ ls -lh output/road_map1.xml output/road_map2.xml output/road_map3.xml
 ls -lh output/overlay.png
 ```
 
-默认只输出三个 XML 和一张路径叠加图。`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标和形状自适应轨迹点。`overlay.png` 使用细线连接同一条轨迹的相邻点，同时保留彩色轨迹点标记以及起终点。
+默认只输出三个 XML 和一张路径叠加图。`road_map1.xml`、`road_map2.xml`、`road_map3.xml` 分别是代价感知、距离优先、平滑优先轨迹，XML 使用局部 UTM 坐标和形状自适应轨迹点。`overlay.png` 使用同色细线连接同一条轨迹的相邻点；距离优先用红色圆点、平滑优先用绿色三角形、综合代价优先用蓝色正方形。不同尺寸的分层标记保证完全重叠时三种颜色仍可见。
 
 只调整起终点或规划权重时，修改配置并重复第 6 步即可；更换点云或滤波参数时，需要重新执行第 2～4 步保存地图。手动生成的地图不会自动登记进 TCP 服务的地图缓存；恢复正常服务时先停止手动 ROS launch，再运行 `bash scripts/run_vehicle.sh`，服务按自身缓存流程处理请求。
 

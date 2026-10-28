@@ -198,25 +198,26 @@ def write_overlay(
     ):
         ir = h - 1 - r
         draw.ellipse(
-            (int(c) - 3, int(ir) - 3, int(c) + 3, int(ir) + 3),
-            fill=color,
+            (int(c) - 8, int(ir) - 8, int(c) + 8, int(ir) + 8),
+            outline=color,
+            width=2,
         )
 
-    point_radius = 2
-    for name, points in paths.items():
-        color = colors.get(name, (255, 255, 0))
+    marker_order = ("cost_aware", "smooth", "distance")
+    for name in marker_order:
+        points = paths.get(name, ())
+        color = colors[name]
         for r, c in points:
             ir = h - 1 - r
             if 0 <= ir < h and 0 <= c < omap.width:
-                draw.ellipse(
-                    (
-                        int(c) - point_radius,
-                        int(ir) - point_radius,
-                        int(c) + point_radius,
-                        int(ir) + point_radius,
-                    ),
-                    fill=color,
-                )
+                x = int(c)
+                y = int(ir)
+                if name == "cost_aware":
+                    draw.rectangle((x - 5, y - 5, x + 5, y + 5), fill=color)
+                elif name == "smooth":
+                    draw.polygon(((x, y - 5), (x - 5, y + 4), (x + 5, y + 4)), fill=color)
+                else:
+                    draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=color)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(out_path)

@@ -2,7 +2,11 @@ import unittest
 
 import numpy as np
 
-from tools.path_creater.path_smoothing import segment_is_free, shortcut_path
+from tools.path_creater.path_smoothing import (
+    segment_is_free,
+    segment_meets_minimum,
+    shortcut_path,
+)
 
 
 class PathSmoothingTest(unittest.TestCase):
@@ -28,6 +32,22 @@ class PathSmoothingTest(unittest.TestCase):
         free[1, 0] = False
 
         self.assertFalse(segment_is_free(free, (0, 0), (1, 1)))
+
+    def test_shortcut_respects_minimum_corridor_clearance(self):
+        free = np.ones((3, 6), dtype=bool)
+        corridor_distance = np.full((3, 6), 10.0, dtype=np.float32)
+        corridor_distance[:, 2:4] = 0.5
+        path = [(1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)]
+
+        smoothed = shortcut_path(
+            free,
+            path,
+            clearance_values=corridor_distance,
+            minimum_clearance=2.0,
+        )
+
+        self.assertGreater(len(smoothed), 2)
+        self.assertFalse(segment_meets_minimum(corridor_distance, (1, 0), (1, 5), 2.0))
 
 
 if __name__ == "__main__":

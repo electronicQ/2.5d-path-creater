@@ -24,7 +24,7 @@ output/overlay.png
 - `road_map1.xml`：代价感知（`cost_aware`）轨迹的局部 UTM XML。
 - `road_map2.xml`：距离优先（`distance`）轨迹的局部 UTM XML。
 - `road_map3.xml`：平滑优先（`smooth`）轨迹的局部 UTM XML。
-- `overlay.png`：在 PGM 地图上使用细线连接每组轨迹点，并保留轨迹点标记以及起点和终点。
+- `overlay.png`：在 PGM 地图上使用同色细线连接每组轨迹点；距离优先为红色圆点，平滑优先为绿色三角形，综合代价优先为蓝色正方形。分层尺寸保证重叠点仍能显示三种颜色，并保留起点和终点外圈标记。
 
 局部 UTM 坐标的定义为：
 
@@ -104,6 +104,14 @@ tracking_sampling:
   min_spacing_m: 0.3
   chord_tolerance_m: 0.15
   max_heading_change_deg: 3.0
+corridor_centering:
+  enabled: true
+  apply_to: cost_aware
+  high_cost_gray_threshold: 220
+  target_clearance_m: 3.0
+  weight: 20.0
+  shortcut_min_clearance_m: 2.5
+  curve_min_clearance_m: 2.0
 curve_smoothing:
   enabled: true
   sample_interval_m: 1.0
@@ -165,13 +173,14 @@ step_length
 + w_turn * turn_penalty
 + w_clear * clearance_penalty
 + w_gray * gray_cost
++ w_center * corridor_deficit²  # 仅 corridor_centering.apply_to 指定策略
 ```
 
 三组默认策略：
 
 - `distance`：更偏短路径
 - `smooth`：更重视少转弯和平滑
-- `cost_aware`：更重视高灰度区域和障碍物安全距离，即使绕远也更倾向于走通行程度高的区域
+- `cost_aware`：更重视高灰度区域和障碍物安全距离，并通过中心走廊代价减少弯道内侧贴边
 
 如果三条路径太像，可以拉大各策略权重差异，尤其是 `w_turn`、`w_clear` 和 `w_gray`。
 
@@ -180,6 +189,10 @@ step_length
 `curve_smoothing.enabled: true` 会继续对 shortcut 后的路径做安全圆角化：每个折角会尝试用二次 Bezier 曲线替代，曲线采样点和相邻采样点连线都必须处在膨胀后的自由栅格内。
 
 `tracking_sampling` 决定最终 XML 轨迹点密度。采样时向前寻找尽可能远的新点，同时限制最大点距、曲线弦误差和累计航向变化。该方式不直接依赖栅格曲率，因此能稳定表现为直线稀疏、缓弯适中、急弯密集。`min_spacing_m` 是最小点距，`max_spacing_m` 是直线最大点距。
+
+`corridor_centering` 只作用于 `apply_to` 指定的策略，默认是 `cost_aware`，因此只影响 `road_map1.xml`。规划器先把灰度小于等于 `high_cost_gray_threshold` 的区域视为道路两侧高代价边界，再计算每个自由格到最近边界的中心距离。A* 对低于 `target_clearance_m` 的格子施加平方中心偏离代价；`shortcut_min_clearance_m` 和 `curve_min_clearance_m` 进一步防止快捷平滑或圆角把轨迹带回弯道内侧。
+
+中心线阈值必须结合实际 PGM 调整：阈值太高会把正常道路也当成边界，阈值太低则可能忽略灰色高代价区域。距离优先和平滑优先不受该配置影响。
 
 ## 常见失败原因
 

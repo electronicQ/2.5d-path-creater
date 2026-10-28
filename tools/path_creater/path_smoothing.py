@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -52,7 +52,38 @@ def segment_is_free(free: np.ndarray, start: GridPoint, end: GridPoint) -> bool:
     return True
 
 
-def shortcut_path(free: np.ndarray, path: Sequence[GridPoint]) -> List[GridPoint]:
+def segment_meets_minimum(
+    values: np.ndarray,
+    start: GridPoint,
+    end: GridPoint,
+    minimum: float,
+) -> bool:
+    value_map = np.asarray(values, dtype=np.float32)
+    h, w = value_map.shape
+    r0, c0 = start
+    r1, c1 = end
+    if not (0 <= r0 < h and 0 <= c0 < w and 0 <= r1 < h and 0 <= c1 < w):
+        return False
+    dr = r1 - r0
+    dc = c1 - c0
+    steps = max(abs(dr), abs(dc)) * 4 + 1
+    for i in range(steps + 1):
+        t = i / float(max(steps, 1))
+        r = r0 + dr * t
+        c = c0 + dc * t
+        for rr in _candidate_indices(r, h):
+            for cc in _candidate_indices(c, w):
+                if float(value_map[rr, cc]) < float(minimum):
+                    return False
+    return True
+
+
+def shortcut_path(
+    free: np.ndarray,
+    path: Sequence[GridPoint],
+    clearance_values: Optional[np.ndarray] = None,
+    minimum_clearance: float = 0.0,
+) -> List[GridPoint]:
     """Greedily remove waypoints when a later waypoint is visible in free space."""
     if len(path) <= 2:
         return list(path)
@@ -62,7 +93,17 @@ def shortcut_path(free: np.ndarray, path: Sequence[GridPoint]) -> List[GridPoint
     last = len(path) - 1
     while i < last:
         j = last
-        while j > i + 1 and not segment_is_free(free, path[i], path[j]):
+        while j > i + 1:
+            valid = segment_is_free(free, path[i], path[j])
+            if valid and clearance_values is not None:
+                valid = segment_meets_minimum(
+                    clearance_values,
+                    path[i],
+                    path[j],
+                    minimum_clearance,
+                )
+            if valid:
+                break
             j -= 1
         result.append(path[j])
         i = j

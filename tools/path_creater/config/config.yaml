@@ -69,6 +69,22 @@ curve_smoothing:
 
 # 三组规划策略。每组权重都会进入 A* 单步代价：
 # step_len + w_turn*转弯代价 + w_clear*障碍距离代价 + w_gray*PGM灰度代价。
+# cost_aware 还会额外加入中心走廊偏离代价。
+corridor_centering:
+  enabled: true
+  # 只修改该策略，另外两条轨迹保持原逻辑。
+  apply_to: cost_aware
+  # 灰度小于等于该值的格子视为道路两侧高代价边界。
+  high_cost_gray_threshold: 220
+  # 期望道路中心距两侧高代价边界的最小距离，单位米。
+  target_clearance_m: 3.0
+  # 中心距离不足时，平方偏差在 A* 单步代价中的权重。
+  weight: 20.0
+  # 快捷平滑后的线段必须保持的最小中心距离。
+  shortcut_min_clearance_m: 2.5
+  # 圆角曲线采样点必须保持的最小中心距离。
+  curve_min_clearance_m: 2.0
+
 planners:
   # 距离优先：主要追求路径短，只轻微考虑安全距离和灰度。
   distance:
@@ -80,7 +96,7 @@ planners:
     w_turn: 4.0
     w_clear: 2.0
     w_gray: 1.0
-  # 代价感知优先：强烈避开低灰度区域和靠近障碍的区域。
+  # 代价感知优先：强烈避开低灰度区域和靠近障碍的区域，并保持道路中心。
   cost_aware:
     w_turn: 0.5
     w_clear: 12.0

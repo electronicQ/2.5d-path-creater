@@ -69,3 +69,17 @@ def build_clearance_from_free(
         inflation_radius_m=float(inflation_radius_m),
         occupied_thresh=float(occupied_thresh),
     )
+
+
+def build_corridor_distance(
+    gray: np.ndarray,
+    resolution: float,
+    high_cost_gray_threshold: float,
+    hard_boundary: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Return distance in meters to the nearest high-cost road boundary."""
+    boundary = np.asarray(gray, dtype=np.uint8) <= int(high_cost_gray_threshold)
+    if hard_boundary is not None:
+        boundary = boundary | np.asarray(hard_boundary, dtype=bool)
+    distance_cells = ndimage.distance_transform_edt(~boundary).astype(np.float32)
+    return distance_cells * float(resolution)
