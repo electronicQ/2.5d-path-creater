@@ -66,6 +66,12 @@ cp tools/path_creater/config/map_enu.meta.example.yaml \
   tools/path_creater/config/map_enu.meta.yaml
 ```
 
+`map/pcd/` 和 `map/pgm/` 同样是工控机本地数据目录，已被 Git 忽略。`map/pcd/` 保存实际 PCD，`map/pgm/` 保存手动转换出的 PGM/YAML；`git pull` 不会覆盖这两个目录中的内容。新环境需要先创建目录并放入实际地图：
+
+```bash
+mkdir -p map/pcd map/pgm
+```
+
 以下路径均相对于项目根目录：
 
 ```text
