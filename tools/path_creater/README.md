@@ -108,10 +108,10 @@ corridor_centering:
   enabled: true
   apply_to: cost_aware
   corner_only: true
-  corner_radius_m: 8.0
+  corner_radius_m: 13.0
   corner_turn_threshold_deg: 20.0
   high_cost_gray_threshold: 220
-  target_clearance_m: 3.0
+  target_clearance_m: 4.0
   weight: 20.0
   shortcut_min_clearance_m: 2.5
   curve_min_clearance_m: 2.0
