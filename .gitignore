@@ -23,6 +23,10 @@ output/
 *.bag
 *.pcd
 
+# Device-local planner configuration and map origin
+/tools/path_creater/config/config.yaml
+/tools/path_creater/config/map_enu.meta.yaml
+
 # Keep lightweight static planning maps tracked.
 !map/pgm/*.pgm
 !map/pgm/*.yaml

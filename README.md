@@ -57,6 +57,15 @@ env -u PYTHONPATH -u PYTHONHOME .runtime/planner/bin/python -m tools.ground_vehi
 
 **首次启动规划服务前，必须提前将对应的 PCD 点云地图和 ENU 原点经纬高文件放到工控机上。** 已创建的 `map/pcd/` 目录用于存放点云，原点文件放在 `tools/path_creater/config/` 中。
 
+`tools/path_creater/config/config.yaml` 和 `map_enu.meta.yaml` 是工控机本地配置，已被 Git 忽略，不会被 `git pull` 覆盖。新检出的仓库可先复制模板：
+
+```bash
+cp tools/path_creater/config/config.example.yaml \
+  tools/path_creater/config/config.yaml
+cp tools/path_creater/config/map_enu.meta.example.yaml \
+  tools/path_creater/config/map_enu.meta.yaml
+```
+
 以下路径均相对于项目根目录：
 
 ```text
