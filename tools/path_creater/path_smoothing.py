@@ -57,6 +57,7 @@ def segment_meets_minimum(
     start: GridPoint,
     end: GridPoint,
     minimum: float,
+    required_mask: Optional[np.ndarray] = None,
 ) -> bool:
     value_map = np.asarray(values, dtype=np.float32)
     h, w = value_map.shape
@@ -66,6 +67,9 @@ def segment_meets_minimum(
         return False
     dr = r1 - r0
     dc = c1 - c0
+    active_mask = None if required_mask is None else np.asarray(required_mask, dtype=bool)
+    if active_mask is not None and active_mask.shape != value_map.shape:
+        raise ValueError("required_mask must match values shape")
     steps = max(abs(dr), abs(dc)) * 4 + 1
     for i in range(steps + 1):
         t = i / float(max(steps, 1))
@@ -73,7 +77,7 @@ def segment_meets_minimum(
         c = c0 + dc * t
         for rr in _candidate_indices(r, h):
             for cc in _candidate_indices(c, w):
-                if float(value_map[rr, cc]) < float(minimum):
+                if (active_mask is None or active_mask[rr, cc]) and float(value_map[rr, cc]) < float(minimum):
                     return False
     return True
 
@@ -83,6 +87,7 @@ def shortcut_path(
     path: Sequence[GridPoint],
     clearance_values: Optional[np.ndarray] = None,
     minimum_clearance: float = 0.0,
+    required_mask: Optional[np.ndarray] = None,
 ) -> List[GridPoint]:
     """Greedily remove waypoints when a later waypoint is visible in free space."""
     if len(path) <= 2:
@@ -101,6 +106,7 @@ def shortcut_path(
                     path[i],
                     path[j],
                     minimum_clearance,
+                    required_mask=required_mask,
                 )
             if valid:
                 break
@@ -108,3 +114,28 @@ def shortcut_path(
         result.append(path[j])
         i = j
     return result
+
+
+def turning_points(path: Sequence[GridPoint], minimum_angle_deg: float = 20.0) -> List[GridPoint]:
+    """Return simplified-path vertices whose direction change exceeds a threshold."""
+    if len(path) < 3:
+        return []
+    threshold = math.radians(float(minimum_angle_deg))
+    turns: List[GridPoint] = []
+    for index in range(1, len(path) - 1):
+        prev_r, prev_c = path[index - 1]
+        row, col = path[index]
+        next_r, next_c = path[index + 1]
+        first = (row - prev_r, col - prev_c)
+        second = (next_r - row, next_c - col)
+        first_len = math.hypot(*first)
+        second_len = math.hypot(*second)
+        if first_len <= 0.0 or second_len <= 0.0:
+            continue
+        cosine = (
+            first[0] * second[0] + first[1] * second[1]
+        ) / (first_len * second_len)
+        angle = math.acos(min(1.0, max(-1.0, cosine)))
+        if angle >= threshold:
+            turns.append((row, col))
+    return turns

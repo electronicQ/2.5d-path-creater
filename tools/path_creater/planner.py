@@ -72,6 +72,7 @@ def astar(
     d_safe_m: float,
     corridor_distance_m: Optional[np.ndarray] = None,
     corridor_target_m: float = 0.0,
+    corridor_weight_map: Optional[np.ndarray] = None,
 ) -> List[GridPoint]:
     h, w = free.shape
     sr, sc = start
@@ -123,8 +124,12 @@ def astar(
             gray_cell_cost = float(gray_cost[nr, nc])
             center_penalty = 0.0
             if corridor_distance_m is not None and weights.w_center > 0.0:
-                center_deficit = max(0.0, corridor_target_m - float(corridor_distance_m[nr, nc]))
-                center_penalty = center_deficit * center_deficit
+                center_weight = 1.0
+                if corridor_weight_map is not None:
+                    center_weight = float(corridor_weight_map[nr, nc])
+                if center_weight > 0.0:
+                    center_deficit = max(0.0, corridor_target_m - float(corridor_distance_m[nr, nc]))
+                    center_penalty = center_weight * center_deficit * center_deficit
             cost = (
                 step_len
                 + weights.w_turn * tp
@@ -168,6 +173,7 @@ def plan_mode(
     d_safe_m: float,
     corridor_distance_m: Optional[np.ndarray] = None,
     corridor_target_m: float = 0.0,
+    corridor_weight_map: Optional[np.ndarray] = None,
 ) -> List[GridPoint]:
     weights = PlannerWeights(
         w_turn=float(mode_weights.get("w_turn", 0.0)),
@@ -185,4 +191,5 @@ def plan_mode(
         d_safe_m,
         corridor_distance_m=corridor_distance_m,
         corridor_target_m=corridor_target_m,
+        corridor_weight_map=corridor_weight_map,
     )

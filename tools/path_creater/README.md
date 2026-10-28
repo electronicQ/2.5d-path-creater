@@ -107,6 +107,9 @@ tracking_sampling:
 corridor_centering:
   enabled: true
   apply_to: cost_aware
+  corner_only: true
+  corner_radius_m: 8.0
+  corner_turn_threshold_deg: 20.0
   high_cost_gray_threshold: 220
   target_clearance_m: 3.0
   weight: 20.0
@@ -190,9 +193,9 @@ step_length
 
 `tracking_sampling` 决定最终 XML 轨迹点密度。采样时向前寻找尽可能远的新点，同时限制最大点距、曲线弦误差和累计航向变化。该方式不直接依赖栅格曲率，因此能稳定表现为直线稀疏、缓弯适中、急弯密集。`min_spacing_m` 是最小点距，`max_spacing_m` 是直线最大点距。
 
-`corridor_centering` 只作用于 `apply_to` 指定的策略，默认是 `cost_aware`，因此只影响 `road_map1.xml`。规划器先把灰度小于等于 `high_cost_gray_threshold` 的区域视为道路两侧高代价边界，再计算每个自由格到最近边界的中心距离。A* 对低于 `target_clearance_m` 的格子施加平方中心偏离代价；`shortcut_min_clearance_m` 和 `curve_min_clearance_m` 进一步防止快捷平滑或圆角把轨迹带回弯道内侧。
+`corridor_centering` 只作用于 `apply_to` 指定的策略，默认是 `cost_aware`，因此只影响 `road_map1.xml`。规划器先生成不带中心代价的引导路径，并根据方向变化识别转弯点。`corner_only: true` 时，只在转弯点周围 `corner_radius_m` 范围内启用中心代价，直线段保持原规划；`corner_turn_threshold_deg` 控制多大方向变化算作转弯。中心距离依据灰度小于等于 `high_cost_gray_threshold` 的道路边界计算，A* 对低于 `target_clearance_m` 的格子施加平方中心偏离代价；`shortcut_min_clearance_m` 和 `curve_min_clearance_m` 只在该转弯区域继续约束快捷平滑和圆角。
 
-中心线阈值必须结合实际 PGM 调整：阈值太高会把正常道路也当成边界，阈值太低则可能忽略灰色高代价区域。距离优先和平滑优先不受该配置影响。
+如果蓝色轨迹的直线段仍被中心代价拉弯，检查 `corner_radius_m` 是否过大或 `corner_turn_threshold_deg` 是否过低；如果转弯没有居中，则反向调整这两个参数。中心线灰度阈值也必须结合实际 PGM 调整。距离优先和平滑优先不受该配置影响。
 
 ## 常见失败原因
 

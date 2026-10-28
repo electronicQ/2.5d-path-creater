@@ -74,6 +74,12 @@ corridor_centering:
   enabled: true
   # 只修改该策略，另外两条轨迹保持原逻辑。
   apply_to: cost_aware
+  # 只在明显转弯附近启用中心保持，直线段保持原规划。
+  corner_only: true
+  # 每个转弯点周围启用中心保持的半径，单位米。
+  corner_radius_m: 8.0
+  # 引导路径方向变化超过该角度才视为转弯，单位度。
+  corner_turn_threshold_deg: 20.0
   # 灰度小于等于该值的格子视为道路两侧高代价边界。
   high_cost_gray_threshold: 220
   # 期望道路中心距两侧高代价边界的最小距离，单位米。

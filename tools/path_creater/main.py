@@ -8,10 +8,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import yaml
 
 from .auto_endpoints import resolve_endpoints
-from .clearance import build_clearance_from_free, build_corridor_distance
+from .clearance import build_clearance_from_free, build_corridor_distance, expand_cells
 from .curve_smoothing import (
     CurveSmoothingConfig,
     TrackingSamplingConfig,
@@ -22,7 +23,7 @@ from .geo import GeoPoint, enu_to_geodetic, geodetic_to_enu, geodetic_to_local_u
 from .map_loader import load_map
 from .map_metadata import load_map_metadata
 from .map_semantics import MapSemantics, build_semantic_layers
-from .path_smoothing import shortcut_path
+from .path_smoothing import shortcut_path, turning_points
 from .planner import plan_mode
 from .trajectory import remove_legacy_outputs, write_overlay, write_road_map_xml
 from .timing import format_duration
@@ -117,6 +118,9 @@ def _load_corridor_centering_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     config = {
         "enabled": bool(value.get("enabled", False)),
         "apply_to": str(value.get("apply_to", "cost_aware")),
+        "corner_only": bool(value.get("corner_only", True)),
+        "corner_radius_m": float(value.get("corner_radius_m", 8.0)),
+        "corner_turn_threshold_deg": float(value.get("corner_turn_threshold_deg", 20.0)),
         "high_cost_gray_threshold": int(value.get("high_cost_gray_threshold", 220)),
         "target_clearance_m": float(value.get("target_clearance_m", 3.0)),
         "weight": float(value.get("weight", 20.0)),
@@ -127,6 +131,10 @@ def _load_corridor_centering_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("high_cost_gray_threshold must be in [0, 255].")
     if config["target_clearance_m"] <= 0.0 or config["weight"] <= 0.0:
         raise ValueError("corridor target and weight must be positive.")
+    if config["corner_radius_m"] < 0.0:
+        raise ValueError("corner_radius_m must be non-negative.")
+    if not 0.0 < config["corner_turn_threshold_deg"] <= 180.0:
+        raise ValueError("corner_turn_threshold_deg must be in (0, 180].")
     if config["shortcut_min_clearance_m"] < 0.0 or config["curve_min_clearance_m"] < 0.0:
         raise ValueError("corridor minimum clearances must be non-negative.")
     return config
@@ -154,6 +162,7 @@ def _world_segment_meets_minimum(
     safety_step_m: float,
     a,
     b,
+    required_mask: Optional[np.ndarray] = None,
 ) -> bool:
     ax, ay = a
     bx, by = b
@@ -164,8 +173,11 @@ def _world_segment_meets_minimum(
         x = ax + (bx - ax) * t
         y = ay + (by - ay) * t
         r, c = omap.world_to_grid(x, y)
-        if not omap.in_bounds(r, c) or float(values[r, c]) < float(minimum):
+        if not omap.in_bounds(r, c):
             return False
+        if required_mask is None or required_mask[r, c]:
+            if float(values[r, c]) < float(minimum):
+                return False
     return True
 
 
@@ -292,18 +304,48 @@ def main(argv: Optional[list] = None) -> int:
 
         plan_start = time.perf_counter()
         use_corridor = corridor_distance is not None and mode == corridor_cfg["apply_to"]
-        mode_weights = dict(weights)
+        center_weight_map = None
         if use_corridor:
-            mode_weights["w_center"] = corridor_cfg["weight"]
-        path = plan_mode(
-            clearance,
-            semantic_layers.gray_cost,
-            start_rc,
-            goal_rc,
-            mode_weights,
-            d_safe_m=d_safe,
-            corridor_distance_m=corridor_distance if use_corridor else None,
-            corridor_target_m=corridor_cfg["target_clearance_m"] if use_corridor else 0.0,
+            base_path = plan_mode(
+                clearance,
+                semantic_layers.gray_cost,
+                start_rc,
+                goal_rc,
+                weights,
+                d_safe_m=d_safe,
+            )
+            if corridor_cfg["corner_only"]:
+                guide_path = shortcut_path(clearance.free, base_path)
+                turns = turning_points(guide_path, corridor_cfg["corner_turn_threshold_deg"])
+                corner_seed = np.zeros(clearance.free.shape, dtype=bool)
+                for row, col in turns:
+                    corner_seed[row, col] = True
+                center_weight_map = expand_cells(
+                    corner_seed,
+                    omap.resolution,
+                    corridor_cfg["corner_radius_m"],
+                )
+                print("Corner-centered zones: {} turns".format(len(turns)))
+            if center_weight_map is not None and not center_weight_map.any():
+                path = base_path
+            else:
+                mode_weights = dict(weights)
+                mode_weights["w_center"] = corridor_cfg["weight"]
+                path = plan_mode(
+                    clearance,
+                    semantic_layers.gray_cost,
+                    start_rc,
+                    goal_rc,
+                    mode_weights,
+                    d_safe_m=d_safe,
+                    corridor_distance_m=corridor_distance,
+                    corridor_target_m=corridor_cfg["target_clearance_m"],
+                    corridor_weight_map=center_weight_map,
+                )
+        else:
+            path = plan_mode(clearance, semantic_layers.gray_cost, start_rc, goal_rc, weights, d_safe_m=d_safe)
+        center_active = use_corridor and (
+            center_weight_map is None or bool(center_weight_map.any())
         )
         plan_elapsed = time.perf_counter() - plan_start
         raw_len = len(path)
@@ -314,8 +356,9 @@ def main(argv: Optional[list] = None) -> int:
             path = shortcut_path(
                 clearance.free,
                 path,
-                clearance_values=corridor_distance if use_corridor else None,
-                minimum_clearance=corridor_cfg["shortcut_min_clearance_m"] if use_corridor else 0.0,
+                clearance_values=corridor_distance if center_active else None,
+                minimum_clearance=corridor_cfg["shortcut_min_clearance_m"] if center_active else 0.0,
+                required_mask=center_weight_map if center_active else None,
             )
             shortcut_elapsed = time.perf_counter() - shortcut_start
         shortcut_len = len(path)
@@ -332,6 +375,7 @@ def main(argv: Optional[list] = None) -> int:
                     curve_cfg.safety_check_step_m,
                     a,
                     b,
+                    required_mask=center_weight_map,
                 )
             )
         else:

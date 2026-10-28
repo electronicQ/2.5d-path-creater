@@ -68,9 +68,21 @@ class PlannerGrayCostTest(unittest.TestCase):
             corridor_distance_m=corridor_distance,
             corridor_target_m=3.0,
         )
+        masked = plan_mode(
+            clearance,
+            gray_cost,
+            (2, 0),
+            (2, 4),
+            {"w_turn": 0.0, "w_clear": 0.0, "w_gray": 0.0, "w_center": 10.0},
+            d_safe_m=0.0,
+            corridor_distance_m=corridor_distance,
+            corridor_target_m=3.0,
+            corridor_weight_map=np.zeros((5, 5), dtype=np.float32),
+        )
 
         self.assertTrue(all(row == 2 for row, _ in shortest))
         self.assertTrue(any(row in (1, 3) for row, _ in centered))
+        self.assertTrue(all(row == 2 for row, _ in masked))
 
 
 if __name__ == "__main__":

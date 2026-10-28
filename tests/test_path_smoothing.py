@@ -6,6 +6,7 @@ from tools.path_creater.path_smoothing import (
     segment_is_free,
     segment_meets_minimum,
     shortcut_path,
+    turning_points,
 )
 
 
@@ -48,6 +49,27 @@ class PathSmoothingTest(unittest.TestCase):
 
         self.assertGreater(len(smoothed), 2)
         self.assertFalse(segment_meets_minimum(corridor_distance, (1, 0), (1, 5), 2.0))
+
+    def test_clearance_constraint_only_applies_inside_required_mask(self):
+        corridor_distance = np.ones((3, 6), dtype=np.float32)
+        corridor_distance[:, 2:4] = 0.5
+        inactive = np.zeros((3, 6), dtype=bool)
+
+        self.assertFalse(segment_meets_minimum(corridor_distance, (1, 0), (1, 5), 2.0))
+        self.assertTrue(
+            segment_meets_minimum(
+                corridor_distance,
+                (1, 0),
+                (1, 5),
+                2.0,
+                required_mask=inactive,
+            )
+        )
+
+    def test_turning_points_ignores_straight_inner_vertices(self):
+        path = [(0, 0), (0, 3), (0, 6), (4, 6)]
+
+        self.assertEqual(turning_points(path, 20.0), [(0, 6)])
 
 
 if __name__ == "__main__":

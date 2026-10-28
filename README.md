@@ -215,7 +215,7 @@ output_dir: ../../../output
 
 `tracking_sampling` 控制最终 XML 的轨迹点密度。默认直线最大约 `10 m` 一点、缓弯约 `1～2 m`、急弯约 `0.3～0.8 m`；可通过 `max_spacing_m`、`min_spacing_m`、`chord_tolerance_m` 和 `max_heading_change_deg` 联合调整。
 
-`corridor_centering` 只修改 `cost_aware` 对应的 `road_map1.xml`：轨迹会增加道路中心保持代价，并在 shortcut 和曲线圆角阶段继续限制与高代价边界的距离，避免弯道切入内侧灰色区域。`road_map2.xml` 和 `road_map3.xml` 保持原逻辑。
+`corridor_centering` 只修改 `cost_aware` 对应的 `road_map1.xml`。默认 `corner_only: true`，只在检测到的转弯附近启用道路中心代价，直线段保持原规划；shortcut 和曲线圆角也只在这些转弯区域继续限制与高代价边界的距离。`road_map2.xml` 和 `road_map3.xml` 保持原逻辑。
 
 ### 6. 运行离线规划并查看输出
 

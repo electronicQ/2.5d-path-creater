@@ -83,3 +83,12 @@ def build_corridor_distance(
         boundary = boundary | np.asarray(hard_boundary, dtype=bool)
     distance_cells = ndimage.distance_transform_edt(~boundary).astype(np.float32)
     return distance_cells * float(resolution)
+
+
+def expand_cells(mask: np.ndarray, resolution: float, radius_m: float) -> np.ndarray:
+    """Expand selected cells by a Euclidean radius."""
+    seeds = np.asarray(mask, dtype=bool)
+    if not seeds.any() or radius_m <= 0.0:
+        return seeds.copy()
+    distance_cells = ndimage.distance_transform_edt(~seeds)
+    return distance_cells * float(resolution) <= float(radius_m) + 1e-9
