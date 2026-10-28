@@ -1,0 +1,84 @@
+# banfu2 地图的默认全局路径规划配置。
+# 所有相对路径都以当前 config.yaml 所在目录为基准。
+
+# 静态栅格地图 yaml，内部引用同名或指定的 .pgm 图像。
+map_yaml: ../../../map/pgm/map_enu.yaml
+
+# 地图对应的 ENU 原点元数据，用于经纬度和局部 ENU 坐标互转。
+map_meta: map_enu.meta.yaml
+
+# 起点经纬高。规划器会先转换为 ENU，再映射到栅格坐标。
+start:
+  latitude: 22.39758935
+  longitude: 113.30942461
+  altitude: 5.0
+
+# 终点经纬高。若起终点落在不可通行区域，程序会尝试自动吸附到附近可通行格。
+goal:
+  latitude: 22.3972281
+  longitude: 113.3087518
+  altitude: 5.0
+
+# PGM 中表示未知区域的灰度值，未知区会被视为禁止通行。
+unknown_gray: 205
+
+# PGM 中小于等于该值的格子视为绝对障碍，禁止通行。90
+absolute_obstacle_gray: 90
+
+# 是否使用原始 PGM 连续灰度作为软代价；灰度越低，代价越高。
+gray_cost:
+  enabled: true
+  # 灰度软代价的全局缩放权重，最终还会乘以各 planner 的 w_gray。
+  weight: 1.0
+
+# 硬膨胀半径，距离未知区或绝对障碍小于等于该距离的格子不可通行。
+inflation_radius_m: 1.6
+
+# 软安全距离，超过 inflation_radius_m 但小于该距离的格子会产生 clearance 软代价。
+d_safe_m: 4.0
+
+# 是否对 A* 原始折线路径做快捷平滑，删除可直连的冗余折点。
+smooth_paths: true
+
+# 圆角曲线平滑与采样配置，用于把折线路径转换为更适合跟踪的连续轨迹点。
+curve_smoothing:
+  # 是否启用圆角曲线平滑。
+  enabled: true
+  # 平滑后轨迹点的采样间隔，单位米。
+  sample_interval_m: 1.0
+  # 转角处切角比例，越大圆角越明显。
+  corner_cut_fraction: 0.35
+  # 单个转角最大切角距离，单位米。
+  max_corner_cut_m: 8.0
+  # 单个转角最小切角距离，单位米。
+  min_corner_cut_m: 0.2
+  # 曲线安全检查采样步长，越小检查越细，但计算更慢。
+  safety_check_step_m: 0.25
+
+# 三组规划策略。每组权重都会进入 A* 单步代价：
+# step_len + w_turn*转弯代价 + w_clear*障碍距离代价 + w_gray*PGM灰度代价。
+planners:
+  # 距离优先：主要追求路径短，只轻微考虑安全距离和灰度。
+  distance:
+    w_turn: 0.0
+    w_clear: 1.0
+    w_gray: 0.5
+  # 平滑优先：提高转弯惩罚，使路径折点更少、更顺。
+  smooth:
+    w_turn: 4.0
+    w_clear: 2.0
+    w_gray: 1.0
+  # 代价感知优先：强烈避开低灰度区域和靠近障碍的区域。
+  cost_aware:
+    w_turn: 0.5
+    w_clear: 12.0
+    w_gray: 35.0
+
+# 轨迹 CSV、叠加图和解析后配置的输出目录。
+output_dir: ../../../output
+
+# 是否输出 overlay.png，用于在地图上查看三条规划路径。
+write_overlay: true
+
+# 是否输出 config.resolved.yaml，记录实际使用的起终点 ENU 坐标等解析结果。
+write_resolved_config: true

@@ -27,8 +27,7 @@ output/
 /map/pcd/
 /map/pgm/
 
-# Device-local planner configuration and map origin
-/tools/path_creater/config/config.yaml
+# Device-local map origin
 /tools/path_creater/config/map_enu.meta.yaml
 
 # Project-local Melodic runtime and Python build cache
