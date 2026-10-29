@@ -70,7 +70,7 @@ if [[ $mode != build ]]; then
   # Bootstrap system Python and native libraries; satisfy project minimums below.
   sudo apt-get install -y ros-noetic-ros-base python3-rosdep python3-catkin-pkg python3-pip \
     python3-numpy python3-yaml python3-pil python3-scipy python3-pyproj \
-    libeigen3-dev libgoogle-glog-dev libtbb-dev libpcl-dev libopencv-dev \
+    fonts-wqy-zenhei libeigen3-dev libgoogle-glog-dev libtbb-dev libpcl-dev libopencv-dev \
     libyaml-cpp-dev liboctomap-dev qtbase5-dev
 fi
 [[ -f /opt/ros/noetic/setup.bash ]] || fail 'Missing /opt/ros/noetic/setup.bash; install ROS Noetic first.'

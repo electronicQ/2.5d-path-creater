@@ -24,7 +24,7 @@ output/overlay.png
 - `road_map1.xml`：代价感知（`cost_aware`）轨迹的局部 UTM XML。
 - `road_map2.xml`：距离优先（`distance`）轨迹的局部 UTM XML。
 - `road_map3.xml`：平滑优先（`smooth`）轨迹的局部 UTM XML。
-- `overlay.png`：在 PGM 地图上使用同色细线连接每组轨迹点；距离优先为红色圆点，平滑优先为绿色三角形，综合代价优先为蓝色正方形。分层尺寸保证重叠点仍能显示三种颜色，并保留起点和终点外圈标记。
+- `overlay.png`：在 PGM 地图上使用同色细线连接每组轨迹点；距离优先为红色圆点，平滑优先为绿色三角形，综合代价优先为蓝色正方形。分层尺寸保证重叠点仍能显示三种颜色，并保留起点和终点外圈标记；左上角图例用中文标明颜色、XML 文件和策略含义。
 
 局部 UTM 坐标的定义为：
 
@@ -54,6 +54,14 @@ UTM 分区和南北半球根据 ENU 原点选择，XML 中的 `x`、`y` 单位�
 ```text
 gray_cost = 1.0 - gray / 255.0
 ```
+
+硬禁止区域外 `inflation_radius_m` 内不可通行。当前硬膨胀半径为 `1.6 m`；软安全距离为 `8.0 m`，两者之间使用线性衰减：
+
+```text
+clearance_penalty = max(0, 8.0 - distance_to_hard_forbidden)
+```
+
+因此距离硬障碍越远，soft clearance 代价越小，到 `8.0 m` 时降为 0。
 
 ## 坐标转换
 
@@ -95,8 +103,8 @@ gray_cost:
   enabled: true
   weight: 1.0
 
-inflation_radius_m: 0.6
-d_safe_m: 1.0
+inflation_radius_m: 1.6
+d_safe_m: 8.0
 smooth_paths: true
 tracking_sampling:
   enabled: true

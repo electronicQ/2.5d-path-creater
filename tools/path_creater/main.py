@@ -208,7 +208,7 @@ def main(argv: Optional[list] = None) -> int:
     omap = load_map(map_yaml, occupied_thresh_override=None)
 
     inflation = float(cfg.get("inflation_radius_m", 0.6))
-    d_safe = float(cfg.get("d_safe_m", 1.0))
+    d_safe = float(cfg.get("d_safe_m", 8.0))
     gray_cfg = cfg.get("gray_cost") or {}
     semantics = MapSemantics(
         unknown_gray=int(cfg.get("unknown_gray", 205)),

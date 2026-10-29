@@ -54,7 +54,7 @@ if [[ $mode != build ]]; then
   apt-cache show ros-melodic-ros-base >/dev/null 2>&1 || fail 'Melodic packages unavailable; configure a working bionic ROS source or use --setup-ros-repo.'
   apt_run install -y ros-melodic-ros-base python-rosdep python-catkin-pkg \
     python-numpy python-yaml python-pathlib2 python-rospkg \
-    libeigen3-dev libgoogle-glog-dev libtbb-dev libpcl-dev libopencv-dev \
+    fonts-wqy-zenhei libeigen3-dev libgoogle-glog-dev libtbb-dev libpcl-dev libopencv-dev \
     libyaml-cpp-dev liboctomap-dev qtbase5-dev \
     libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
     libffi-dev liblzma-dev libgdbm-dev libncursesw5-dev uuid-dev

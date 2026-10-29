@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from .geo import GeoPoint
 from .map_loader import OccupancyMap
@@ -154,6 +154,71 @@ def _indent_xml(element: ET.Element, level: int = 0) -> None:
         child.tail = indent + ("  " if index + 1 < len(children) else "")
 
 
+def _overlay_font(size: int):
+    candidates = (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+    )
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            try:
+                return ImageFont.truetype(candidate, size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def _draw_tracking_marker(draw: ImageDraw.ImageDraw, name: str, x: int, y: int, color, scale: int = 1) -> None:
+    if name == "cost_aware":
+        half = 2 * scale
+        draw.rectangle((x - half, y - half, x + half, y + half), fill=color)
+    elif name == "smooth":
+        half = 2 * scale
+        draw.polygon(((x, y - half), (x - half, y + half // 2), (x + half, y + half // 2)), fill=color)
+    else:
+        radius = max(0, scale - 1)
+        if radius == 0:
+            draw.point((x, y), fill=color)
+        else:
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
+
+
+def _draw_overlay_legend(image: Image.Image, colors: Dict[str, Tuple[int, int, int]]) -> Image.Image:
+    font_size = max(12, min(28, int(round(min(image.size) * 0.012))))
+    font = _overlay_font(font_size)
+    entries = (
+        ("cost_aware", "蓝色正方形  road_map1.xml  综合代价优先"),
+        ("distance", "红色圆点    road_map2.xml  距离优先"),
+        ("smooth", "绿色三角形  road_map3.xml  平滑优先"),
+    )
+    footer = "黄色圈：起点    品红圈：终点"
+    padding = 8
+    line_height = font_size + 8
+    dummy = ImageDraw.Draw(image)
+    text_width = max(dummy.textbbox((0, 0), text, font=font)[2] for _, text in entries)
+    text_width = max(text_width, dummy.textbbox((0, 0), footer, font=font)[2])
+    legend_width = text_width + padding * 2 + 24
+    legend_height = padding * 2 + line_height * (len(entries) + 1)
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    draw.rounded_rectangle(
+        (padding, padding, padding + legend_width, padding + legend_height),
+        radius=5,
+        fill=(255, 255, 255, 225),
+        outline=(40, 40, 40, 255),
+        width=1,
+    )
+    for index, (name, text) in enumerate(entries):
+        center_y = padding + padding + line_height * index + line_height // 2
+        _draw_tracking_marker(draw, name, padding + 12, center_y, colors[name], scale=2)
+        draw.text((padding + 24, center_y - font_size // 2), text, fill=(20, 20, 20, 255), font=font)
+    footer_y = padding + padding + line_height * len(entries)
+    draw.text((padding + 8, footer_y), footer, fill=(20, 20, 20, 255), font=font)
+    return Image.alpha_composite(image.convert("RGBA"), layer).convert("RGB")
+
+
 def write_overlay(
     omap: OccupancyMap,
     free: np.ndarray,
@@ -161,6 +226,7 @@ def write_overlay(
     out_path: Path,
     start: GridPoint,
     goal: GridPoint,
+    show_legend: bool = True,
 ) -> None:
     """Render grayscale map with thin colored paths and tracking-point markers."""
     # occ visualized: white=free, black=occupied
@@ -212,12 +278,9 @@ def write_overlay(
             if 0 <= ir < h and 0 <= c < omap.width:
                 x = int(c)
                 y = int(ir)
-                if name == "cost_aware":
-                    draw.rectangle((x - 2, y - 2, x + 2, y + 2), fill=color)
-                elif name == "smooth":
-                    draw.polygon(((x, y - 2), (x - 2, y + 1), (x + 2, y + 1)), fill=color)
-                else:
-                    draw.point((x, y), fill=color)
+                _draw_tracking_marker(draw, name, x, y, color)
 
+    if show_legend:
+        image = _draw_overlay_legend(image, colors)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(out_path)

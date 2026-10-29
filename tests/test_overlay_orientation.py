@@ -31,7 +31,15 @@ class OverlayOrientationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "overlay.png"
             omap = self.make_map()
-            write_overlay(omap, np.ones((20, 20), dtype=bool), {"distance": [(0, 0)]}, out, (19, 0), (0, 19))
+            write_overlay(
+                omap,
+                np.ones((20, 20), dtype=bool),
+                {"distance": [(0, 0)]},
+                out,
+                (19, 0),
+                (0, 19),
+                show_legend=False,
+            )
 
             img = Image.open(out).convert("RGB")
             self.assertEqual(img.getpixel((0, 19)), (220, 40, 40))
@@ -48,6 +56,7 @@ class OverlayOrientationTest(unittest.TestCase):
                 out,
                 (19, 0),
                 (19, 1),
+                show_legend=False,
             )
 
             image = Image.open(out).convert("RGB")
@@ -69,6 +78,7 @@ class OverlayOrientationTest(unittest.TestCase):
                 out,
                 (19, 0),
                 (19, 1),
+                show_legend=False,
             )
 
             image = Image.open(out).convert("RGB")
@@ -80,6 +90,26 @@ class OverlayOrientationTest(unittest.TestCase):
             self.assertIn((220, 40, 40), colors)
             self.assertIn((40, 160, 40), colors)
             self.assertIn((40, 80, 220), colors)
+
+    def test_overlay_draws_legend_in_top_left(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "legend.png"
+            omap = self.make_map(size=640)
+            write_overlay(
+                omap,
+                np.ones((640, 640), dtype=bool),
+                {
+                    "distance": [(100, 100)],
+                    "smooth": [(100, 100)],
+                    "cost_aware": [(100, 100)],
+                },
+                out,
+                (600, 100),
+                (600, 500),
+            )
+
+            image = Image.open(out).convert("RGB")
+            self.assertNotEqual(image.getpixel((12, 12)), (200, 200, 200))
 
 
 if __name__ == "__main__":

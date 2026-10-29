@@ -35,7 +35,8 @@ gray_cost:
 inflation_radius_m: 1.6
 
 # 软安全距离，超过 inflation_radius_m 但小于该距离的格子会产生 clearance 软代价。
-d_safe_m: 4.0
+# 从 1.6 m 到 8.0 m 线性衰减，使轨迹持续远离绝对障碍。
+d_safe_m: 8.0
 
 # 是否对 A* 原始折线路径做快捷平滑，删除可直连的冗余折点。
 smooth_paths: true
