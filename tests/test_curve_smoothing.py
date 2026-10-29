@@ -60,10 +60,10 @@ class AdaptiveTrackingSamplingTest(unittest.TestCase):
 
         sampled = adaptive_resample_path(points, TrackingSamplingConfig())
         lengths = self.segment_lengths(sampled)
-        self.assertGreaterEqual(min(lengths), 1.0)
+        self.assertGreaterEqual(min(lengths), 1.0 - 1e-6)
         self.assertLessEqual(max(lengths), 2.0)
 
-    def test_sharp_curve_uses_short_segments(self):
+    def test_sharp_curve_uses_about_one_meter_segments(self):
         points = [
             (2.0 * math.sin(math.radians(angle)), 2.0 * (1.0 - math.cos(math.radians(angle))))
             for angle in range(0, 181, 5)
@@ -71,8 +71,9 @@ class AdaptiveTrackingSamplingTest(unittest.TestCase):
 
         sampled = adaptive_resample_path(points, TrackingSamplingConfig())
         lengths = self.segment_lengths(sampled)
-        self.assertGreaterEqual(min(lengths), 0.25)
-        self.assertLessEqual(max(lengths), 0.8)
+        regular_segments = lengths[:-1]
+        self.assertGreaterEqual(min(regular_segments), 0.9)
+        self.assertLessEqual(max(regular_segments), 1.1)
 
     def test_adaptive_sampling_keeps_exact_start_and_goal(self):
         start = (1.25, 2.5)

@@ -26,7 +26,7 @@ class CurveSmoothingConfig:
 class TrackingSamplingConfig:
     enabled: bool = True
     max_spacing_m: float = 10.0
-    min_spacing_m: float = 0.3
+    min_spacing_m: float = 1.0
     chord_tolerance_m: float = 0.15
     max_heading_change_deg: float = 3.0
 

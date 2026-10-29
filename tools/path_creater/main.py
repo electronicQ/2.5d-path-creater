@@ -103,7 +103,7 @@ def _load_tracking_sampling_config(cfg: Dict[str, Any]) -> TrackingSamplingConfi
     return TrackingSamplingConfig(
         enabled=bool(value.get("enabled", True)),
         max_spacing_m=float(value.get("max_spacing_m", 10.0)),
-        min_spacing_m=float(value.get("min_spacing_m", 0.3)),
+        min_spacing_m=float(value.get("min_spacing_m", 1.0)),
         chord_tolerance_m=float(value.get("chord_tolerance_m", 0.15)),
         max_heading_change_deg=float(value.get("max_heading_change_deg", 3.0)),
     )

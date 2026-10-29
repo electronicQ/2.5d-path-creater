@@ -213,7 +213,7 @@ output_dir: ../../../output
 
 再将配置中的 `start` 和 `goal` 改为实际起终点的 `latitude`、`longitude`、`altitude`：经纬度单位为度，高度单位为米，不能直接沿用仓库示例。**离线规划配置接收经纬高；TCP 客户端接收局部 UTM 米制偏移，两种输入不能直接混用。** 起终点应在地图内，并留出配置中障碍膨胀所需的通行空间。
 
-`tracking_sampling` 控制最终 XML 的轨迹点密度。默认直线最大约 `10 m` 一点、缓弯约 `1～2 m`、急弯约 `0.3～0.8 m`；可通过 `max_spacing_m`、`min_spacing_m`、`chord_tolerance_m` 和 `max_heading_change_deg` 联合调整。
+`tracking_sampling` 控制最终 XML 的轨迹点密度。默认直线最大约 `10 m` 一点、缓弯约 `1～2 m`、急弯约 `1 m`；可通过 `max_spacing_m`、`min_spacing_m`、`chord_tolerance_m` 和 `max_heading_change_deg` 联合调整。
 
 `corridor_centering` 是可选的局部道路居中功能，只修改 `cost_aware` 对应的 `road_map1.xml`。当前默认配置为 `enabled: false`，用于对比原始代价轨迹；重新启用并设置 `corner_only: true` 后，仅在检测到的转弯附近增加中心代价。`road_map2.xml` 和 `road_map3.xml` 始终保持原逻辑。
 

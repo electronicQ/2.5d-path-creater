@@ -35,7 +35,7 @@ local_y = UTM_northing(point) - UTM_northing(ENU_origin)
 
 UTM 分区和南北半球根据 ENU 原点选择，XML 中的 `x`、`y` 单位为米，`yaw` 单位为弧度。XML 是“以 ENU 原点为原点的局部 UTM 偏移坐标”，与 ENU 使用相同的原点，但不是严格意义上的 ENU 坐标。文件名映射固定为：`road_map1.xml = road_map_cost_aware.xml`、`road_map2.xml = road_map_distance.xml`、`road_map3.xml = road_map_smooth.xml`。XML 只包含 `<map>` 根节点和 `<vertex>` 轨迹点。
 
-默认会对 A* 输出先做直线可视化 shortcut，再做安全圆角曲线平滑，然后按弦误差、航向变化和最大间距自适应采样。长直线上的点距最大约 10 m，缓弯约 1～2 m，急弯约 0.3～0.8 m；XML 保存最终轨迹点。
+默认会对 A* 输出先做直线可视化 shortcut，再做安全圆角曲线平滑，然后按弦误差、航向变化和最大间距自适应采样。长直线上的点距最大约 10 m，缓弯约 1～2 m，急弯约 1 m；XML 保存最终轨迹点。
 
 ## 地图灰度语义
 
@@ -110,7 +110,7 @@ smooth_paths: true
 tracking_sampling:
   enabled: true
   max_spacing_m: 10.0
-  min_spacing_m: 0.3
+  min_spacing_m: 1.0
   chord_tolerance_m: 0.15
   max_heading_change_deg: 3.0
 corridor_centering:

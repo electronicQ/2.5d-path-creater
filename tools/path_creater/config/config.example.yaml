@@ -50,7 +50,7 @@ tracking_sampling:
   # 长直线上的最大点距，单位米。
   max_spacing_m: 10.0
   # 急弯处的最小点距，单位米。
-  min_spacing_m: 0.3
+  min_spacing_m: 1.0
   # 两个轨迹点连线相对原平滑曲线的最大允许偏差，单位米。
   chord_tolerance_m: 0.15
   # 相邻输出线段允许的最大航向变化，单位度。
