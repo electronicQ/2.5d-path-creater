@@ -75,8 +75,8 @@ curve_smoothing:
 # step_len + w_turn*转弯代价 + w_clear*障碍距离代价 + w_gray*PGM灰度代价。
 # cost_aware 还会额外加入中心走廊偏离代价。
 corridor_centering:
-  # 暂时关闭，对比原始 cost_aware 与局部道路居中效果。
-  enabled: false
+  # 在蓝色 cost_aware 轨迹的转弯附近启用道路中心保持。
+  enabled: true
   # 只修改该策略，另外两条轨迹保持原逻辑。
   apply_to: cost_aware
   # 只在明显转弯附近启用中心保持，直线段保持原规划。
