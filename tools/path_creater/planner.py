@@ -49,8 +49,8 @@ def _dir_id(dr: int, dc: int) -> int:
     return table[(dr, dc)]
 
 
-def clearance_penalty(dist_m: float, d_safe_m: float) -> float:
-    return max(0.0, d_safe_m - float(dist_m))
+def clearance_penalty(dist_m: float, d_safe_m: float, decay_rate: float = 1.0) -> float:
+    return float(decay_rate) * max(0.0, d_safe_m - float(dist_m))
 
 
 def turn_penalty(prev_dir: Optional[int], new_dir: int) -> float:
@@ -73,6 +73,7 @@ def astar(
     corridor_distance_m: Optional[np.ndarray] = None,
     corridor_target_m: float = 0.0,
     corridor_weight_map: Optional[np.ndarray] = None,
+    clearance_decay_rate: float = 1.0,
 ) -> List[GridPoint]:
     h, w = free.shape
     sr, sc = start
@@ -120,7 +121,7 @@ def astar(
 
             ndir = _dir_id(dr, dc)
             tp = turn_penalty(prev_dir, ndir)
-            cp = clearance_penalty(float(dist_m[nr, nc]), d_safe_m)
+            cp = clearance_penalty(float(dist_m[nr, nc]), d_safe_m, clearance_decay_rate)
             gray_cell_cost = float(gray_cost[nr, nc])
             center_penalty = 0.0
             if corridor_distance_m is not None and weights.w_center > 0.0:
@@ -174,6 +175,7 @@ def plan_mode(
     corridor_distance_m: Optional[np.ndarray] = None,
     corridor_target_m: float = 0.0,
     corridor_weight_map: Optional[np.ndarray] = None,
+    clearance_decay_rate: float = 1.0,
 ) -> List[GridPoint]:
     weights = PlannerWeights(
         w_turn=float(mode_weights.get("w_turn", 0.0)),
@@ -192,4 +194,5 @@ def plan_mode(
         corridor_distance_m=corridor_distance_m,
         corridor_target_m=corridor_target_m,
         corridor_weight_map=corridor_weight_map,
+        clearance_decay_rate=clearance_decay_rate,
     )

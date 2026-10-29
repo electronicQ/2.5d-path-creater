@@ -58,10 +58,10 @@ gray_cost = 1.0 - gray / 255.0
 硬禁止区域外 `inflation_radius_m` 内不可通行。当前硬膨胀半径为 `1.6 m`；软安全距离为 `8.0 m`，两者之间使用线性衰减：
 
 ```text
-clearance_penalty = max(0, 8.0 - distance_to_hard_forbidden)
+clearance_penalty = 0.7 × max(0, 8.0 - distance_to_hard_forbidden)
 ```
 
-因此距离硬障碍越远，soft clearance 代价越小，到 `8.0 m` 时降为 0。
+因此距离硬障碍越远，soft clearance 代价越小，到 `8.0 m` 时降为 0。`clearance_decay_rate` 控制线性斜率：当前每增加 1 米，代价减少 `0.7`；设为 `1.0` 可恢复每米减少 `1.0`。
 
 ## 坐标转换
 
@@ -105,6 +105,7 @@ gray_cost:
 
 inflation_radius_m: 1.6
 d_safe_m: 8.0
+clearance_decay_rate: 0.7
 smooth_paths: true
 tracking_sampling:
   enabled: true

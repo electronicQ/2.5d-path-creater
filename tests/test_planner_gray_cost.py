@@ -8,10 +8,10 @@ from tools.path_creater.planner import clearance_penalty, plan_mode
 
 class PlannerGrayCostTest(unittest.TestCase):
     def test_soft_clearance_decays_linearly_to_eight_meters(self):
-        self.assertAlmostEqual(clearance_penalty(1.6, 8.0), 6.4)
-        self.assertAlmostEqual(clearance_penalty(4.0, 8.0), 4.0)
-        self.assertAlmostEqual(clearance_penalty(7.5, 8.0), 0.5)
-        self.assertEqual(clearance_penalty(8.0, 8.0), 0.0)
+        self.assertAlmostEqual(clearance_penalty(1.6, 8.0, 0.7), 4.48)
+        self.assertAlmostEqual(clearance_penalty(4.0, 8.0, 0.7), 2.8)
+        self.assertAlmostEqual(clearance_penalty(7.5, 8.0, 0.7), 0.35)
+        self.assertEqual(clearance_penalty(8.0, 8.0, 0.7), 0.0)
 
     def test_corridor_distance_is_larger_near_road_center(self):
         gray = np.full((5, 9), 250, dtype=np.uint8)

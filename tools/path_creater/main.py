@@ -209,6 +209,9 @@ def main(argv: Optional[list] = None) -> int:
 
     inflation = float(cfg.get("inflation_radius_m", 0.6))
     d_safe = float(cfg.get("d_safe_m", 8.0))
+    clearance_decay_rate = float(cfg.get("clearance_decay_rate", 0.7))
+    if clearance_decay_rate <= 0.0:
+        raise ValueError("clearance_decay_rate must be positive.")
     gray_cfg = cfg.get("gray_cost") or {}
     semantics = MapSemantics(
         unknown_gray=int(cfg.get("unknown_gray", 205)),
@@ -313,6 +316,7 @@ def main(argv: Optional[list] = None) -> int:
                 goal_rc,
                 weights,
                 d_safe_m=d_safe,
+                clearance_decay_rate=clearance_decay_rate,
             )
             if corridor_cfg["corner_only"]:
                 guide_path = shortcut_path(clearance.free, base_path)
@@ -341,9 +345,18 @@ def main(argv: Optional[list] = None) -> int:
                     corridor_distance_m=corridor_distance,
                     corridor_target_m=corridor_cfg["target_clearance_m"],
                     corridor_weight_map=center_weight_map,
+                    clearance_decay_rate=clearance_decay_rate,
                 )
         else:
-            path = plan_mode(clearance, semantic_layers.gray_cost, start_rc, goal_rc, weights, d_safe_m=d_safe)
+            path = plan_mode(
+                clearance,
+                semantic_layers.gray_cost,
+                start_rc,
+                goal_rc,
+                weights,
+                d_safe_m=d_safe,
+                clearance_decay_rate=clearance_decay_rate,
+            )
         center_active = use_corridor and (
             center_weight_map is None or bool(center_weight_map.any())
         )
