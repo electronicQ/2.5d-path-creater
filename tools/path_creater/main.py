@@ -208,8 +208,8 @@ def main(argv: Optional[list] = None) -> int:
     omap = load_map(map_yaml, occupied_thresh_override=None)
 
     inflation = float(cfg.get("inflation_radius_m", 0.6))
-    d_safe = float(cfg.get("d_safe_m", 8.0))
-    clearance_decay_rate = float(cfg.get("clearance_decay_rate", 0.7))
+    d_safe = float(cfg.get("d_safe_m", 10.0))
+    clearance_decay_rate = float(cfg.get("clearance_decay_rate", 0.5))
     if clearance_decay_rate <= 0.0:
         raise ValueError("clearance_decay_rate must be positive.")
     gray_cfg = cfg.get("gray_cost") or {}
