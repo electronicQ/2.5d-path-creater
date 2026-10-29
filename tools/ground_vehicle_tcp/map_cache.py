@@ -17,7 +17,7 @@ from tools.path_creater.geo import GeoPoint
 from .pipeline import PipelineError, PipelineRunner
 
 
-CONVERSION_REVISION = "grid-map-pgm-v1"
+CONVERSION_REVISION = "grid-map-pgm-v2"
 CONVERSION_CONFIG = {
     "pcd_loader_launch": "grid_map_pcl/grid_map_pcl_loader_node.launch",
     "filters_launch": "grid_map_demos/filters_demo_gai.launch",
@@ -26,6 +26,14 @@ CONVERSION_CONFIG = {
     "traversability_topic": "/grid_map_visualization/traversability_grid",
     "saver": "tools/pgm_saver/save_continuous_map.py",
 }
+CONVERSION_SOURCE_FILES = (
+    "src/grid_map/grid_map_pcl/config/parameters.yaml",
+    "src/grid_map/grid_map_pcl/launch/grid_map_pcl_loader_node.launch",
+    "src/grid_map/grid_map_demos/launch/filters_demo_gai.launch",
+    "src/grid_map/grid_map_demos/config/filters_demo_gai.yaml",
+    "src/grid_map/grid_map_demos/config/filters_demo_filter_chain_gai.yaml",
+    "tools/pgm_saver/save_continuous_map.py",
+)
 
 
 class MapCache:
@@ -59,13 +67,23 @@ class MapCache:
             "altitude": float(origin.altitude),
         }
 
-    def _fingerprint(self, pcd_sha256: str, pcd_name: str, origin: GeoPoint) -> str:
+    def _conversion_source_hashes(self) -> Dict[str, str]:
+        hashes: Dict[str, str] = {}
+        for relative_path in CONVERSION_SOURCE_FILES:
+            path = self.project_root / relative_path
+            if not path.is_file():
+                raise PipelineError("FILE_NOT_FOUND", "map conversion source not found: {}".format(path))
+            hashes[relative_path] = self.file_sha256(path)
+        return hashes
+
+    def _fingerprint(self, pcd_sha256: str, pcd_name: str, origin: GeoPoint, source_hashes: Dict[str, str]) -> str:
         payload = {
             "pcd_sha256": pcd_sha256,
             "pcd_name": pcd_name,
             "enu_origin": self._origin_dict(origin),
             "conversion_revision": CONVERSION_REVISION,
             "conversion_config": CONVERSION_CONFIG,
+            "conversion_source_sha256": source_hashes,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -112,7 +130,8 @@ class MapCache:
         if not pcd_path.is_file():
             raise PipelineError("FILE_NOT_FOUND", "source PCD not found: {}".format(pcd_path))
         pcd_sha256 = self.file_sha256(pcd_path)
-        fingerprint = self._fingerprint(pcd_sha256, pcd_name, origin)
+        source_hashes = self._conversion_source_hashes()
+        fingerprint = self._fingerprint(pcd_sha256, pcd_name, origin, source_hashes)
         target_dir = self.maps_root / fingerprint
         cached = self._cached_map(target_dir, fingerprint, pcd_sha256, pcd_name, origin)
         if cached is not None:
@@ -125,6 +144,8 @@ class MapCache:
             runner.convert(pcd_name, temp_base, Path(log_path), rviz=False)
             if self.file_sha256(pcd_path) != pcd_sha256:
                 raise PipelineError("OUTPUT_INVALID", "source PCD changed during map conversion")
+            if self._conversion_source_hashes() != source_hashes:
+                raise PipelineError("OUTPUT_INVALID", "map conversion configuration changed during conversion")
             temp_pgm = Path(str(temp_base) + ".pgm")
             temp_yaml = Path(str(temp_base) + ".yaml")
             if not temp_pgm.is_file() or temp_pgm.stat().st_size == 0 or not temp_yaml.is_file():
@@ -148,6 +169,7 @@ class MapCache:
                 "enu_origin": self._origin_dict(origin),
                 "conversion_revision": CONVERSION_REVISION,
                 "conversion_config": CONVERSION_CONFIG,
+                "conversion_source_sha256": source_hashes,
                 "pgm_sha256": self.file_sha256(final_pgm),
                 "map_yaml_sha256": self.file_sha256(final_yaml),
             }

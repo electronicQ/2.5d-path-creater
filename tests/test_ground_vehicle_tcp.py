@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from PIL import Image
 
-from tools.ground_vehicle_tcp.map_cache import MapCache
+from tools.ground_vehicle_tcp.map_cache import CONVERSION_SOURCE_FILES, MapCache
 from tools.ground_vehicle_tcp.pipeline import PipelineError
 from tools.ground_vehicle_tcp.server import NavigationServer
 from tools.ground_vehicle_tcp.workflow import NavigationWorkflow
@@ -221,9 +221,17 @@ class MapCacheTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
+    @staticmethod
+    def write_conversion_sources(root, marker="v1"):
+        for relative_path in CONVERSION_SOURCE_FILES:
+            path = root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n".format(marker), encoding="utf-8")
+
     def test_map_fingerprint_reuses_valid_conversion_and_changes_with_origin(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            self.write_conversion_sources(root)
             pcd = root / "scans_Global_ENU.pcd"
             pcd.write_bytes(b"pcd-content")
             log = root / "map.log"
@@ -244,6 +252,24 @@ class MapCacheTest(unittest.TestCase):
             self.assertEqual(self.FakeRunner.conversions, 3)
             manifest = yaml.safe_load((updated_path.parent / "manifest.yaml").read_text(encoding="utf-8"))
             self.assertEqual(manifest["pcd_sha256"], cache.file_sha256(pcd))
+
+    def test_conversion_parameter_change_invalidates_map_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_conversion_sources(root)
+            pcd = root / "scans_Global_ENU.pcd"
+            pcd.write_bytes(b"pcd-content")
+            log = root / "map.log"
+            cache = MapCache(root / "state", root, runner_factory=self.FakeRunner)
+            origin = GeoPoint(22.39758935, 113.30942461, 25.8618)
+            self.FakeRunner.conversions = 0
+
+            first = cache.ensure_map(pcd, "scans_Global_ENU.pcd", origin, log)
+            (root / CONVERSION_SOURCE_FILES[-2]).write_text("changed filter weights\n", encoding="utf-8")
+            changed = cache.ensure_map(pcd, "scans_Global_ENU.pcd", origin, log)
+
+            self.assertNotEqual(first, changed)
+            self.assertEqual(self.FakeRunner.conversions, 2)
 
 
 if __name__ == "__main__":
